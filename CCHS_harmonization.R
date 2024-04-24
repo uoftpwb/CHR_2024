@@ -31,14 +31,7 @@ data_frames <- setNames(lapply(csv_files, read.csv), sapply(csv_files, function(
 list2env(data_frames, envir = .GlobalEnv)
 
 
-# rm(`cchs-pumf-2001`, `cchs-pumf-2003`,`cchs-pumf-2005`,`cchs-pumf-2007_2008`,`cchs-pumf-2009-2010`,
-#    `cchs-pumf-2011-2012`,`cchs-pumf-2013-2014`,`cchs-pumf-2015-2016`,`cchs-pumf-2017-2018`)
-
-save.image("CCHS_harmonization.RData") 
-load("CCHS_harmonization.RData")
-
-
-#Transform variables into harmonized versions------------
+##### Declare Useful Mappings #####
 
 ##Province: GEO_PRV----
 GEO_PRV_MAPPING <- tibble(
@@ -423,6 +416,7 @@ cchs_2014 <- cchs_pumf_2014 %>%
     sleep_hours = SLPG01, 
     sleep_refreshing = SLP_03, 
     smoke = SMK_05C, 
+    alt_tobacco,
     alcohol = ALCDTTM,
     employed = LBSDPFT,
     student = SDC_8 
@@ -448,8 +442,6 @@ cchs_2014 <- cchs_pumf_2014 %>%
             TRUE ~ "Does not own home"
           ),          
           minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
-          sex_diversity = case_when(sex_diversity == 1 ~ "Heterosexual", sex_diversity == 2 ~ "Sexual minorities", 
-                                  sex_diversity == 3 ~ "Sexual minorities", TRUE ~ NA_character_),
           education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
           health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
           life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
@@ -816,6 +808,24 @@ cchs_2010 <- cchs_pumf_2010 %>%
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
           student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+
+
+######### Combine the Dataframes and Save ########
+
+# Combine the data frames for the years 2009 to 2014 with the combined data frames for 2015/2016 and 2017/2018 into one data frame
+cchs <- bind_rows(
+  cchs_2009 %>% mutate(year = "2009", graphic_year = 2009),
+  cchs_2010 %>% mutate(year = "2010", graphic_year = 2010),
+  cchs_2011 %>% mutate(year = "2011", graphic_year = 2011),
+  cchs_2012 %>% mutate(year = "2012", graphic_year = 2012),
+  cchs_2013 %>% mutate(year = "2013", graphic_year = 2013),
+  cchs_2014 %>% mutate(year = "2014", graphic_year = 2014),
+  cchs_2015_2016 %>% mutate(year = "2015/2016", graphic_year = 2015.5),
+  cchs_2017_2018 %>% mutate(year = "2017/2018", graphic_year = 2017.5)
+)
+write.csv(cchs, file = "Data/combined_cchs_data.csv", row.names = FALSE)
+
+rm(list=ls(pattern="^cchs_"))
 
 save.image("CCHS_harmonization.RData") 
 load("CCHS_harmonization.RData")
