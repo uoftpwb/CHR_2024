@@ -830,6 +830,56 @@ rm(list=ls(pattern="^cchs_"))
 save.image("CCHS_harmonization.RData") 
 load("CCHS_harmonization.RData")
 
+
+
+######################### Variable Processing #############################
+
+income_labels <- c("≤$20,000" = 1, "$20,000-$39,999" = 2, "$40,000-$59,999" = 3, "$60,000-$79,999" = 4, "$80,000 or more" = 5)
+
+cchs<- read.csv("Data/combined_cchs_data.csv") %>%
+  # Process income variables, by assigning the median income value to each range, then calculating equivalized household income
+  mutate( hh_income_medians = case_when(hh_income == 1 ~ 10000, 
+                                        hh_income == 2 ~ 30000,
+                                        hh_income == 3 ~ 50000,
+                                        hh_income == 4 ~ 70000,
+                                        hh_income == 5 ~ 100000),
+          equiv_income = hh_income_medians / sqrt(hh_size)) %>%
+  # Process ages into pre-specified age ranges
+  mutate(age_ranges = case_when(
+    age %in% c("15-17", "18-19", "20-24", "25-29") ~ "15-29",
+    age %in% c("30-34", "35-39", "40-44") ~ "30-44",
+    age %in% c("45-49", "50-54", "55-59") ~ "45-59",
+    age %in% c("60-64", "65-69", "70-74", "75-79", "80+") ~ "60+",
+    TRUE ~ NA_character_
+  ))
+
+######################### Province Table Generation #############################
+
+# Group by year, province, and each individual value of ls (life satisfaction)
+# Then calculate the weighted frequency of each 0-10 value of ls in each year and each province
+province <- cchs %>%
+  drop_na(ls) %>%
+  group_by(year, province, ls) %>%
+  summarise(weighted_freq = sum(weight * ifelse(ls >= 0 & ls <= 10, 1, 0), na.rm = TRUE)) %>%
+  ungroup()
+
+years <- unique(province$year)
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  subset_data <- province %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/province_tables/province_", filename_year, ".csv"), row.names = FALSE)
+}
+
+
+
+
+
+
+
+
+
+
+
 ######################### Generate a simulated table #############################
 # Define the parameters for the simulated data
 provinces <- c("NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC", "YT", "NT", "NU")
