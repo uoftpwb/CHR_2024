@@ -14,16 +14,90 @@ library(RColorBrewer)
 
 ########### VISUALIZATIONS FOR TABLES GROUPED BY PROVINCE  ###########
 
-# Read all the CSV files and combine them into one dataframe
-file_list <- list.files(path = "Output/province_tables", pattern = "*.csv", full.names = TRUE)
-province <- do.call(rbind, lapply(file_list, function(file) {
-  year_value <- sub("Output/province_tables/province_(.*).csv", "\\1", file)
-  graphic_year_value <- ifelse(nchar(as.character(year_value)) == 4, year_value, 
-                               ifelse(year_value == "20152016", 2015.5, 
-                                      ifelse(year_value == "20172018", 2017.5, NA)))
+# Read all the PUMF CSV files and combine them into one dataframe
+PUMF_list <- list.files(path = "Output/PROVxLS Tables CCHS", pattern = "*.csv", full.names = TRUE)
+provincePUMF <- PUMF_list %>%
+  purrr::map_dfr(~ read.csv(.x) %>%
+  mutate(year = as.numeric(paste0("20", sub("Output/PROVxLS Tables CCHS/PROVxLS_(.*)_CCHS.csv", "\\1", .x))))) %>%
+  rename(frequency = weighted_freq) %>%
+  bind_rows(
+      group_by(., year, ls) %>%
+      summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(province = "Canada")
+  )
+
+# Read all the RTRA CSV files and combine them into one dataframe
+file_list <- list.files(path = "Data/CCHS RTRA", pattern = "^PROVxAGExLS.*\\.csv$", full.names = TRUE)
+provinceRTRA <- file_list %>%  # Start a chain of commands using the file_list vector
+  purrr::map_dfr(~read.csv(.x) %>%  # Read each file in the list into a dataframe and row-bind them together
+    rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
+    mutate(year = as.numeric( paste0("20", sub("Data/CCHS RTRA/PROVxAGExLS_(.*)_CCHS.csv", "\\1", .x))))) %>%  # Extract the year from the filename and add it as a new column
+  mutate(province = case_when(
+    GEO_PRV == 10 ~ "Newfoundland and Labrador",
+    GEO_PRV == 11 ~ "Prince Edward Island",
+    GEO_PRV == 12 ~ "Nova Scotia",
+    GEO_PRV == 13 ~ "New Brunswick",
+    GEO_PRV == 24 ~ "Quebec",
+    GEO_PRV == 35 ~ "Ontario",
+    GEO_PRV == 46 ~ "Manitoba",
+    GEO_PRV == 47 ~ "Saskatchewan",
+    GEO_PRV == 48 ~ "Alberta",
+    GEO_PRV == 59 ~ "British Columbia",
+    GEO_PRV == 60 ~ "Yukon",
+    GEO_PRV == 61 ~ "Northwest Territories",
+    GEO_PRV == 62 ~ "Nunavut",
+    is.na(GEO_PRV) ~ "Canada",
+    TRUE ~ NA_character_
+  )) %>%
+  filter(!is.na(ls) & ls <= 10) %>%  # Drop rows with NA in 'ls' or 'ls' values higher than 10
+  mutate(AGEGROUP = case_when(
+    AGEGROUP == ".toless15" ~ "15-29",
+    AGEGROUP == "15toless3" ~ "30-44",
+    AGEGROUP == "30toless4" ~ "45-60",
+    AGEGROUP == "45toless6" ~ "60+",
+    TRUE ~ "All ages")) %>%
+  select(province, year, age = AGEGROUP, ls, frequency = X_COUNT_)
+
+
+
+
+
+for (i in seq_along(file_list)) {
+  assign(paste0("cchs_", gsub("Data/CCHS RTRA/PROVxAGExLS_(.*)_CCHS.csv", "\\1", file_list[i])), read.csv(file_list[i]))
+}
+# Compare the names of cchs_1920, cchs_21, and cchs_22 and check for non-matches
+cchs_1920_columns <- names(cchs_1920)
+cchs_21_columns <- names(cchs_21)
+cchs_22_columns <- names(cchs_22)
+
+# Find common columns
+common_columns <- Reduce(intersect, list(cchs_1920_columns, cchs_21_columns, cchs_22_columns))
+
+# Find non-matching columns for each dataframe
+non_matching_1920 <- setdiff(cchs_1920_columns, common_columns)
+non_matching_21 <- setdiff(cchs_21_columns, common_columns)
+non_matching_22 <- setdiff(cchs_22_columns, common_columns)
+
+# Print non-matching columns
+print("Non-matching columns in cchs_1920:")
+print(non_matching_1920)
+print("Non-matching columns in cchs_21:")
+print(non_matching_21)
+print("Non-matching columns in cchs_22:")
+print(non_matching_22)
+
+
+
+
+provinceRTRA <- do.call(rbind, lapply(file_list, function(file) {
+  year_value <- paste0("20", sub("Data/CCHS RTRA/PROVxAGExLS_(.*)_CCHS.csv", "\\1", file))
+  graphic_year_value <- ifelse(nchar(as.character(year_value)) == 4, as.numeric(year_value), 
+                               ifelse(year_value == "201920", 2019.5))
   read.csv(file) %>%
-    mutate(year = year_value, graphic_year = graphic_year_value)
+    mutate(year = year_value, graphic_year = as.numeric(graphic_year_value))
 }))
+
+
 
 
 ##### Visualization for country-wide life satisfaction over time
@@ -145,3 +219,53 @@ ggplot(provinces_20172018, aes(x = reorder(factor(province), average_ls), y = we
 
   ggsave("Output/Plots/province distributions.png", width = 8, height = 15, units = "in")
   ggsave("Output/Plots/province distributions.jpg", width = 8, height = 15, units = "in")
+
+
+############### Animated Plots of Temporal Change in Distribtuions for Canada #########3
+
+library(ggplot2)
+library(gganimate)
+library(gapminder)
+
+
+canada <- canada %>%
+    mutate(display_year = case_when(as.numeric(year) <= 2014 ~ as.numeric(year),
+                                    year == "20152016" ~ 2016,
+                                    year == "20172018" ~ 2018)) %>%
+    group_by(year) %>%
+    mutate(proportion = total_weighted_freq / sum(total_weighted_freq))
+
+
+# Create the bar chart
+canada_life_satisfaction_plot <- ggplot(canada, aes(x = factor(ls), y = proportion, fill = factor(ls))) +
+  geom_bar(stat = "identity") +
+  labs(title = 'Life Satisfaction in Canada (2009-2018)',
+       x = 'Life Satisfaction Score',
+       y = 'Proportion') +
+  theme_minimal() +
+  transition_time(display_year) +
+  labs(subtitle = 'Year: {frame_time}') +
+  ease_aes('linear')
+
+canada_life_satisfaction_plot <- ggplot(canada, aes(x = as.factor(ls), y = proportion)) +
+    geom_bar(stat = "identity", width = 1) +
+    scale_fill_gradient(low = "lightblue", high = "yellow") +
+    labs(title = "Canadian Life Satisfaction 2009-2018",
+        x = "Life Satisfaction Score",
+        y = "Proportion") +
+    theme_minimal() +
+    theme(panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          panel.border = element_blank(),  # Remove the box around the plot
+          axis.text.x = element_text(size = rel(1.5)),
+          plot.subtitle = element_text(size = rel(3), hjust = 0, vjust = -3)) +
+    scale_y_continuous(labels = scales::percent_format(scale = 10), expand = c(0, 0)) +  # Remove space between 0% and the x-axis
+    transition_time(display_year) +
+    labs(subtitle = 'Year: {as.integer(frame_time)}') +
+    ease_aes('linear')
+
+# Create the animated plot
+anim <- animate(canada_life_satisfaction_plot, nframes = 25 * (2018 - 2009), fps = 25, width = 800, height = 600, units = 'px')
+
+# Save the animation
+anim_save("Output/Plots/life_satisfaction_canada.gif", animation = anim)

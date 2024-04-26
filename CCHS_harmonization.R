@@ -923,14 +923,21 @@ cchs<- read.csv("Data/combined_cchs_data.csv") %>%
 province <- cchs %>%
   drop_na(ls) %>%
   group_by(year, province, ls) %>%
-  summarise(weighted_freq = sum(weight * ifelse(ls >= 0 & ls <= 10, 1, 0), na.rm = TRUE)) %>%
-  ungroup()
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  bind_rows(
+      group_by(., year, ls) %>%
+      summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(province = "Canada")
+  )
 
 years <- unique(province$year)
+
 for (yr in years) {
   filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
   subset_data <- province %>% filter(year == yr)
-  write.csv(subset_data, file = paste0("Output/province_tables/province_", filename_year, ".csv"), row.names = FALSE)
+  write.csv(subset_data, file = paste0("Output/PROVxLS Tables CCHS/PROVxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
 
