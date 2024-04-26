@@ -142,7 +142,7 @@ cchs_2017_2018 <- cchs_pumf_2017_2018 %>%
     minority = SDCDGCGT,
     weight = WTS_M,
     sex_diversity = SDC_035,
-    education = DHHDG611,
+    education = EHG2DVR3,
     health = GEN_005,
     life_stress = GEN_020,
     work_stress = GEN_025,
@@ -163,7 +163,11 @@ cchs_2017_2018 <- cchs_pumf_2017_2018 %>%
     neighbourhood_sat = SWL_045,
     phq9 = DEPDVPHQ,
     employed = LBFG10,
-    student = MAC_015
+    student = MAC_015,
+    screentime_weekday=SBE_005, 
+    screentime_weekend=SBE_010, 
+    sps_attachment=SPSDVATT,
+    sps_integration=SPSDVINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -209,11 +213,17 @@ cchs_2017_2018 <- cchs_pumf_2017_2018 %>%
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           phq9 = case_when(phq9 <= 27 ~ phq9, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_) ,
+          screentime_weekday=case_when(screentime_weekday==1~"2 hours or less per day",screentime_weekday==2~"More than 2 hours but less than 4 hours",screentime_weekday==3~"4 hours to less than 6 hours",
+                                       screentime_weekday==4~ "6 hours to less than 8 hours",screentime_weekday==5~"8 hours or more per day",screentime_weekday==6~"Was not at work or school",TRUE ~ NA_character_),
+          screentime_weekend=case_when(screentime_weekend==1~"2 hours or less per day",screentime_weekend==2~"More than 2 hours but less than 4 hours",screentime_weekend==3~"4 hours to less than 6 hours",
+                                       screentime_weekend==4~ "6 hours to less than 8 hours",screentime_weekend==5~"8 hours or more per day",screentime_weekend==6~"Was not at work or school",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
 
 
-
-
+cchs_2017_2018$sps_attachment
+cchs_2017_2018$sps_integration
 
 ######### CCHS_2015-2016 ~ Renaming and Cleaning ##########
 
@@ -236,7 +246,7 @@ cchs_2015_2016 <- cchs_pumf_2015_2016 %>%
     minority = SDCDGCGT,
     weight = WTS_M,
     sex_diversity = SDC_035,
-    education = DHHDG611,
+    education = EHG2DVR3,
     health = GEN_005,
     life_stress = GEN_020,
     work_stress = GEN_025,
@@ -257,7 +267,10 @@ cchs_2015_2016 <- cchs_pumf_2015_2016 %>%
     neighbourhood_sat = SWL_045,
     phq9 = DEPDVPHQ,
     employed = LBFG10,
-    student = MAC_015
+    student = MAC_015,
+    screentime_week=SACDVTER,
+    sps_attachment=SPSDVATT,
+    sps_integration=SPSDVINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -303,7 +316,14 @@ cchs_2015_2016 <- cchs_pumf_2015_2016 %>%
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           phq9 = case_when(phq9 <= 27 ~ phq9, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
 
 ######### CCHS_2013-2014 ~ Renaming, Separating and Cleaning ##########
 
@@ -349,6 +369,9 @@ cchs_2013 <- cchs_pumf_2013 %>%
     alcohol = ALCDTTM,
     employed = LBSG31,
     student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -382,7 +405,13 @@ cchs_2013 <- cchs_pumf_2013 %>%
           nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
           alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
 
 cchs_2014 <- cchs_pumf_2014 %>%
   rowwise() %>%
@@ -419,7 +448,10 @@ cchs_2014 <- cchs_pumf_2014 %>%
     alt_tobacco,
     alcohol = ALCDTTM,
     employed = LBSDPFT,
-    student = SDC_8 
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -453,7 +485,12 @@ cchs_2014 <- cchs_pumf_2014 %>%
           nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
           alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
 
 
 
@@ -506,7 +543,10 @@ cchs_2011 <- cchs_pumf_2011 %>%
     housing_sat = SWL_09,
     neighbourhood_sat = SWL_10,
     employed = LBSG31,
-    student = SDC_8
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -549,7 +589,13 @@ cchs_2011 <- cchs_pumf_2011 %>%
           housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
 
 cchs_2012 <- cchs_pumf_2012 %>%
   rowwise() %>%
@@ -595,7 +641,10 @@ cchs_2012 <- cchs_pumf_2012 %>%
     housing_sat = SWL_09,
     neighbourhood_sat = SWL_10,
     employed = LBSG31,
-    student = SDC_8
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -638,7 +687,13 @@ cchs_2012 <- cchs_pumf_2012 %>%
           housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
 
 ######### CCHS_2009-2010 ~ Separating, Renaming and Cleaning ##########
 
@@ -686,7 +741,8 @@ cchs_2009 <- cchs_pumf_2009 %>%
     housing_sat = SWL_09,
     neighbourhood_sat = SWL_10,
     employed = LBSG31,
-    student = SDC_8
+    student = SDC_8,
+    screentime_week=SACDTER
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -725,7 +781,10 @@ cchs_2009 <- cchs_pumf_2009 %>%
           housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_))
 
 cchs_2010 <- cchs_pumf_2010 %>%
   rowwise() %>%
@@ -768,7 +827,8 @@ cchs_2010 <- cchs_pumf_2010 %>%
     housing_sat = SWL_09,
     neighbourhood_sat = SWL_10,
     employed = LBSG31,
-    student = SDC_8
+    student = SDC_8,
+    screentime_week=SACDTER
   ) %>% 
   mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
           province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
@@ -807,7 +867,10 @@ cchs_2010 <- cchs_pumf_2010 %>%
           housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
           neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
           employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
-          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_))
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_))
 
 
 ######### Combine the Dataframes and Save ########
