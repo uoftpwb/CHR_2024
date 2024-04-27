@@ -940,6 +940,33 @@ for (yr in years) {
   write.csv(subset_data, file = paste0("Output/PROVxLS Tables CCHS/PROVxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
+######################### Province X Age Table Generation #############################
+
+provinceXage <- cchs %>%
+  drop_na(ls, age_ranges) %>%
+  group_by(year, province, ls, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  bind_rows(
+    group_by(., year, province, ls) %>%
+    summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(age_ranges = "All ages")
+  ) %>%
+  bind_rows(
+      group_by(., year, age_ranges, ls) %>%
+      summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(province = "Canada")
+  ) %>%
+  arrange(year, province, age_ranges, ls)
+
+years <- unique(provinceXage$year)
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- provinceXage %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/PROVxAGExLS Tables CCHS/PROVxAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
 
 
 
