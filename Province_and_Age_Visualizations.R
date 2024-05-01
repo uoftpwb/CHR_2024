@@ -644,17 +644,7 @@ ggsave("Output/Plots/trajectory_by_age_group_Canada_CSS.svg", plot = age_group_l
 
 ############## GALLUP DATA ####################
 
-gallup_data_raw <- readRDS("Data/Gallup/GallupSmaller.rds") %>%
-  filter(COUNTRYNEW == "Canada") %>%
-  select(year = YEAR_WAVE, ls = WP16, age = WP1220, WGT, date = WP4) %>%
-  mutate(date = as.Date(date, format = "%Y-%m-%d")) %>%
-  group_by(year) %>%
-  mutate(average_date = mean(date, na.rm = TRUE)) %>%
-  mutate(average_date = case_when(
-    year <= 2007 ~ as.Date(paste(year, "-07-01", sep="")),
-    TRUE ~ average_date
-  )) %>%
-  mutate(year = as.numeric(format(average_date, "%Y")) + (as.numeric(format(average_date, "%j")) - 1) / 365)
+# Import and Process Data
 
 gallup_data_raw <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
   filter(COUNTRYNEW == "Canada") %>%
@@ -666,18 +656,221 @@ gallup_data_raw <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
     year <= 2007 ~ as.Date(paste(year, "-07-01", sep="")),
     TRUE ~ average_date
   )) %>%
-  mutate(year = as.numeric(format(average_date, "%Y")) + (as.numeric(format(average_date, "%j")) - 1) / 365)
-
-
-
-gallup <- gallup_data_raw %>%
+  mutate(year = as.numeric(format(average_date, "%Y")) + (as.numeric(format(average_date, "%j")) - 1) / 365) %>%
   mutate(age_ranges = case_when(
             age >= 15 & age < 30 ~ "15-29",
             age >= 30 & age < 45 ~ "30-44",
             age >= 45 & age < 60 ~ "45-59",
             age >= 60 & age < 100 ~ "60+",
-            TRUE ~ NA_character_
-  )) %>%
+            TRUE ~ NA_character_))
+
+canada_gallup <- gallup_data_raw %>%
+  group_by(year) %>%
+  summarize(
+    ls_0 = weighted.mean(ls == 0, w = WGT, na.rm = TRUE),
+    ls_1 = weighted.mean(ls == 1, w = WGT, na.rm = TRUE),
+    ls_2 = weighted.mean(ls == 2, w = WGT, na.rm = TRUE),
+    ls_3 = weighted.mean(ls == 3, w = WGT, na.rm = TRUE),
+    ls_4 = weighted.mean(ls == 4, w = WGT, na.rm = TRUE),
+    ls_5 = weighted.mean(ls == 5, w = WGT, na.rm = TRUE),
+    ls_6 = weighted.mean(ls == 6, w = WGT, na.rm = TRUE),
+    ls_7 = weighted.mean(ls == 7, w = WGT, na.rm = TRUE),
+    ls_8 = weighted.mean(ls == 8, w = WGT, na.rm = TRUE),
+    ls_9 = weighted.mean(ls == 9, w = WGT, na.rm = TRUE),
+    ls_10 = weighted.mean(ls == 10, w = WGT, na.rm = TRUE)
+  ) %>%
+  pivot_longer(cols = starts_with("ls_"), names_to = "ls", values_to = "proportion", names_prefix = "ls_") %>%
+  mutate(year = floor(year))
+##### Distribution Plot by Year
+
+# Define ordered life satisfaction levels
+ls_levels_ordered <- c("10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0")
+
+canada_by_year_gallup <- canada_gallup %>%
+  mutate(ls = factor(ls, levels = ls_levels_ordered)) %>%
+  group_by(year) %>%
+  mutate(cumsum = cumsum(proportion),
+         label_pos = cumsum - 0.5 * proportion)
+
+
+# Create a color palette and assign to life satisfaction levels
+wellbeing_scale_separate <- wellbeing_scale_colours_separate %>%
+                   setNames(ls_levels_ordered)
+
+
+# Prepare label data for life satisfaction levels 5 or below in the year 2014
+label_data <- canada_by_year_gallup %>%
+  filter(as.numeric(ls) <= 7, year == 2015)
+
+# Construct the bar plot with filled bars and labels
+ggplot(canada_by_year_gallup, aes(x = factor(year), y = proportion, fill = ls)) +
+  geom_bar(stat = "identity", position = "fill", width = 1) +
+  scale_fill_manual(values = wellbeing_scale_separate, name = "Life Satisfaction\nScore") +
+  labs(title = "Distribution of Life Satisfaction Scores in Canada, 2006-2023 (Gallup)",
+       x = "Year",
+       y = "Percentage") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_text(data = label_data, aes(label = ls, y = label_pos),
+            size = 8, 
+            color = "white") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1))
+
+ggsave("Output/Plots/year_distributions_gallup.png", width = 8, height = 15, units = "in")
+ggsave("Output/Plots/year_distributions_gallup.jpg", width = 8, height = 15, units = "in")
+
+
+##### Animated Distribution Plot
+
+library(gganimate)
+library(gapminder)
+library(grid)
+
+
+canada_anim_gallup <- canada_gallup %>%
+    # Calculate the weighted average life satisfaction for each year
+    mutate(ls = as.numeric(ls)) %>%
+    group_by(year) %>%
+    mutate(average_ls = sum(proportion * as.numeric(ls)))
+
+# Create the bar chart
+canada_life_satisfaction_plot <- ggplot(canada_anim_gallup, aes(x = as.factor(ls), y = proportion, fill = as.factor(ls))) +
+    geom_bar(stat = "identity", width = 1) +
+    geom_vline(aes(xintercept = average_ls+1), color = "#602582", linetype = "solid", linewidth = 0.5) +
+    #geom_text(aes(label = sprintf("Avg: %.2f", average_ls)), x = Inf, y = 1, vjust = -0.5, hjust = 1, color = "#602582", size = 6) +
+    labs(title = "Canadian Life Satisfaction 2009-2023 (Gallup)",
+        x = "Cantril's Ladder Response",
+        y = "Proportion") +
+    theme_minimal() +
+    theme(title = element_text(size = rel(2)),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          panel.border = element_blank(),  # Remove the box around the plot
+          axis.text.x = element_text(size = rel(2)),
+          axis.text.y = element_text(size = rel(2)),
+          legend.position = "none") +  # Remove the legend
+    scale_y_continuous(labels = scales::percent_format(scale = 100), expand = c(0, 0)) +   # Remove space between 0% and the x-axis
+    scale_fill_manual(values = wellbeing_scale_colours) +
+    transition_time(year) +
+    labs(subtitle = 'Year: {as.integer(frame_time)}') +  # Use labs to add a subtitle that changes with the frame time
+    ease_aes('linear')
+#annotation_custom(grob = textGrob(as.character('{as.integer(frame_time)}'), gp = gpar(col = "black", fontsize = 80)), xmin = -4, xmax = Inf, ymin = 1, ymax = Inf) + 
+
+# Create the animated plot
+anim <- animate(canada_life_satisfaction_plot, nframes = 50 * (2023 - 2006), fps = 25, width = 800, height = 1000, units = 'px', end_pause = 100)
+
+# Save the animation
+anim_save("Output/Plots/animated_canada_plot_gallup.gif", animation = anim)
+
+
+######## YOUTH PLOTS with GALLUP ##########
+
+canada_youth_gallup <- gallup_data_raw %>%
+  filter(age_ranges == "15-29") %>%
+  group_by(year) %>%
+  summarize(
+    ls_0 = weighted.mean(ls == 0, w = WGT, na.rm = TRUE),
+    ls_1 = weighted.mean(ls == 1, w = WGT, na.rm = TRUE),
+    ls_2 = weighted.mean(ls == 2, w = WGT, na.rm = TRUE),
+    ls_3 = weighted.mean(ls == 3, w = WGT, na.rm = TRUE),
+    ls_4 = weighted.mean(ls == 4, w = WGT, na.rm = TRUE),
+    ls_5 = weighted.mean(ls == 5, w = WGT, na.rm = TRUE),
+    ls_6 = weighted.mean(ls == 6, w = WGT, na.rm = TRUE),
+    ls_7 = weighted.mean(ls == 7, w = WGT, na.rm = TRUE),
+    ls_8 = weighted.mean(ls == 8, w = WGT, na.rm = TRUE),
+    ls_9 = weighted.mean(ls == 9, w = WGT, na.rm = TRUE),
+    ls_10 = weighted.mean(ls == 10, w = WGT, na.rm = TRUE),
+    sample_size = n()
+  ) %>%
+  pivot_longer(cols = starts_with("ls_"), names_to = "ls", values_to = "proportion", names_prefix = "ls_") %>%
+  mutate(year = floor(year),
+        count = sample_size * proportion)
+
+##### Youth Distribution Plot by Year
+
+# Define ordered life satisfaction levels
+ls_levels_ordered <- c("10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0")
+
+canada_youth_by_year_gallup <- canada_youth_gallup %>%
+  mutate(ls = factor(ls, levels = ls_levels_ordered)) %>%
+  group_by(year) %>%
+  mutate(cumsum = cumsum(proportion),
+         label_pos = cumsum - 0.5 * proportion)
+
+
+# Create a color palette and assign to life satisfaction levels
+wellbeing_scale_separate <- wellbeing_scale_colours_separate %>%
+                   setNames(ls_levels_ordered)
+
+
+# Prepare label data for life satisfaction levels 5 or below in the year 2015
+label_data <- canada_youth_by_year_gallup %>%
+  filter(as.numeric(ls) <= 7, year == 2015)
+
+# Construct the bar plot with filled bars and labels
+ggplot(canada_youth_by_year_gallup, aes(x = factor(year), y = proportion, fill = ls)) +
+  geom_bar(stat = "identity", position = "fill", width = 1) +
+  scale_fill_manual(values = wellbeing_scale_separate, name = "Life Satisfaction\nScore") +
+  labs(title = "Life Satisfaction Scores of 15-29 Year Olds in Canada, 2006-2023 (Gallup)",
+       x = "Year",
+       y = "Percentage") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_text(data = label_data, aes(label = ls, y = label_pos),
+            size = 8, 
+            color = "white") +
+  geom_text(data = canada_youth_by_year_gallup %>% distinct(year, .keep_all = TRUE), aes(label = sample_size, y = 1), vjust = -0.5, color = "black", size = 3) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1))
+
+ggsave("Output/Plots/year_distributions_youth_gallup.png", width = 8, height = 15, units = "in")
+ggsave("Output/Plots/year_distributions_youth_gallup.jpg", width = 8, height = 15, units = "in")
+
+
+##### Animated Distribution Plot for Youth
+
+canada_anim_youth_gallup <- canada_youth_gallup %>%
+    # Calculate the weighted average life satisfaction for each year
+    mutate(ls = as.numeric(ls)) %>%
+    group_by(year) %>%
+    mutate(average_ls = sum(proportion * as.numeric(ls)))
+
+# Create the bar chart
+canada_youth_life_satisfaction_plot <- ggplot(canada_anim_youth_gallup, aes(x = as.factor(ls), y = proportion, fill = as.factor(ls))) +
+    geom_bar(stat = "identity", width = 1) +
+    geom_vline(aes(xintercept = average_ls+1), color = "#602582", linetype = "solid", linewidth = 0.5) +
+    #geom_text(aes(label = sprintf("Avg: %.2f", average_ls)), x = Inf, y = 1, vjust = -0.5, hjust = 1, color = "#602582", size = 6) +
+    labs(title = "Canadian Youth Life Satisfaction 2006-2023 (Gallup)",
+        x = "Cantril's Ladder Response",
+        y = "Proportion") +
+    theme_minimal() +
+    theme(title = element_text(size = rel(2)),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(),
+          panel.border = element_blank(),  # Remove the box around the plot
+          axis.text.x = element_text(size = rel(2)),
+          axis.text.y = element_text(size = rel(2)),
+          legend.position = "none") +  # Remove the legend
+    scale_y_continuous(labels = scales::percent_format(scale = 100), expand = c(0, 0)) +   # Remove space between 0% and the x-axis
+    scale_fill_manual(values = wellbeing_scale_colours) +
+    transition_time(year) +
+    labs(subtitle = 'Year: {as.integer(frame_time)}') +  # Use labs to add a subtitle that changes with the frame time
+    ease_aes('linear')
+#annotation_custom(grob = textGrob(as.character('{as.integer(frame_time)}'), gp = gpar(col = "black", fontsize = 80)), xmin = -4, xmax = Inf, ymin = 1, ymax = Inf) + 
+
+# Create the animated plot
+anim <- animate(canada_youth_life_satisfaction_plot, nframes = 50 * (2023 - 2006), fps = 25, width = 800, height = 1000, units = 'px', end_pause = 100)
+
+# Save the animation
+anim_save("Output/Plots/animated_canada_youth_plot_gallup.gif", animation = anim)
+
+
+
+
+##### Trajectory by Age-group Overtime
+
+gallup_avg_ls <- gallup_data_raw %>%
   group_by(year, age_ranges) %>%
   summarize(average_ls = weighted.mean(ls, WGT, na.rm=TRUE)) %>%
   drop_na(age_ranges)
@@ -688,7 +881,7 @@ y_breaks <- seq(min_y, max_y, by = 0.5)
 y_fill <- rep(c("white", "grey98"), length.out = length(y_breaks) - 1)
 rect_data <- data.frame(ymin = head(y_breaks, -1), ymax = tail(y_breaks, -1), fill = factor(y_fill))
 
-age_group_ls_plot_gallup <- ggplot(gallup, aes(x = year, y = average_ls, group = age_ranges, color = age_ranges)) +
+age_group_ls_plot_gallup <- ggplot(gallup_avg_ls, aes(x = year, y = average_ls, group = age_ranges, color = age_ranges)) +
   geom_rect(data = rect_data, 
           aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax, fill = fill), 
           color = NA, inherit.aes = FALSE, show.legend = FALSE) +
@@ -710,7 +903,7 @@ age_group_ls_plot_gallup <- ggplot(gallup, aes(x = year, y = average_ls, group =
         panel.background = element_blank(),
         aspect.ratio = 1/3) +
   scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-  scale_x_continuous(breaks = seq(min(gallup$year, na.rm = TRUE), max(gallup$year, na.rm = TRUE), by = 1)) +
+  scale_x_continuous(breaks = seq(min(gallup_avg_ls$year, na.rm = TRUE), max(gallup_avg_ls$year, na.rm = TRUE), by = 1)) +
   scale_color_brewer(palette = "Set2", type = "qual") +
   scale_fill_manual(values = c("white", "grey98"))
 
