@@ -914,9 +914,26 @@ cchs<- read.csv("Data/combined_cchs_data.csv") %>%
     age %in% c("45-49", "50-54", "55-59") ~ "45-59",
     age %in% c("60-64", "65-69", "70-74", "75-79", "80+") ~ "60+",
     TRUE ~ NA_character_
-  ))
-
-######################### Province Table Generation #############################
+  )) %>%
+  mutate(
+    numeric_year = case_when(
+      year == "2015/2016" ~ 2015,
+      year == "2017/2018" ~ 2017,
+      TRUE ~ as.numeric(year)
+    ),
+    median_birth_year = case_when(
+      age == "80+" ~ numeric_year - 80,
+      TRUE ~ numeric_year - as.numeric(sub("^(\\d+)-.*", "\\1", age)) - (as.numeric(sub(".*-(\\d+)$", "\\1", age)) - as.numeric(sub("^(\\d+)-.*", "\\1", age))) / 2
+  )) %>%
+  mutate(
+    generation = case_when(
+            median_birth_year <= 1945 ~ "Silent Generation",
+            median_birth_year >= 1946 & median_birth_year <= 1964 ~ "Baby Boomers",
+            median_birth_year >= 1965 & median_birth_year <= 1980 ~ "Generation X",
+            median_birth_year >= 1981 & median_birth_year <= 1996 ~ "Millennials",
+            median_birth_year >= 1997 & median_birth_year <= 2012 ~ "Generation Z",
+            TRUE ~ NA_character_)
+  )
 
 # Group by year, province, and each individual value of ls (life satisfaction)
 # Then calculate the weighted frequency of each 0-10 value of ls in each year and each province
@@ -969,8 +986,33 @@ for (yr in years) {
 }
 
 
+######################### Province X Generation Table Generation #############################
 
+provinceXgeneration <- cchs %>%
+  drop_na(ls, generation) %>%
+  group_by(year, province, ls, generation) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  bind_rows(
+    group_by(., year, province, ls) %>%
+    summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(generation = "All generations")
+  ) %>%
+  bind_rows(
+      group_by(., year, generation, ls) %>%
+      summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(province = "Canada")
+  ) %>%
+  arrange(year, province, generation, ls)
 
+years <- unique(provinceXgeneration$year)
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- provinceXgeneration %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/PROVxGENERATIONxLS Tables CCHS/PROVxGENERATIONxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
 
 
 
