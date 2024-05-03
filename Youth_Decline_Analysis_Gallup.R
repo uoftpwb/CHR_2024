@@ -26,7 +26,7 @@ gallup_data_raw <- readRDS("Data/Gallup/GWP_021723_FullyCleaned_Canada.rds") %>%
 
 # Identify determinant variables by excluding certain columns and those with 'RECODED' in their names
 determinants <- setdiff(names(gallup_data_raw), c("ls", "WP5889", "WP5", "WAVE", "WPID", "WPID_RANDOM", "WGT", "FIELD_DATE", "COUNTRY_ISO2", "COUNTRY_ISO3", "COUNTRYNEW", "REG_GLOBAL",
-                    "REG2_GLOBAL", "YEAR_CALENDAR", "year", "average_date", "date", "WP13156", "WP16590", "INDEX_LE", "INDEX_ST", "INDEX_TH")) %>%
+                    "REG2_GLOBAL", "YEAR_CALENDAR", "year", "average_date", "date", "WP13156", "WP16590", "INDEX_LE", "INDEX_ST", "INDEX_TH", "WP18", "WP12258A", "WP12258")) %>%
                     setdiff(grep("RECODED", ., value = TRUE, invert = FALSE))
 
 # Identify binary and categorical columns based on their values
@@ -91,7 +91,8 @@ zero_variance_cols <- names(zero_variance[zero_variance])
 
 gallup_data_clean_young_lasso <- gallup_data_clean_young %>%
   select(all_of(determinants)) %>%
-  select(-all_of(zero_variance_cols))
+  select(-all_of(zero_variance_cols)) %>%
+  select(-month)
 
 # Run a lasso regression for gallup_data_clean_young using the previously determined interaction terms
 library(glmnet)
@@ -137,16 +138,16 @@ average_residuals_by_year <- gallup_data_clean_young %>%
 
 
 library(ggplot2)
+
 ggplot(average_residuals_by_year, aes(x = year)) +
-  geom_line(aes(y = average_resid), color = "blue") +
+  geom_line(aes(y = average_resid, group = 1), color = "blue") +
   geom_point(aes(y = average_resid), color = "blue") +
-  geom_line(aes(y = average_lasso_resid), color = "red") +
+  geom_line(aes(y = average_lasso_resid, group = 1), color = "red") +
   geom_point(aes(y = average_lasso_resid), color = "red") +
   labs(title = "Average of Residuals by Year",
        x = "Year",
        y = "Average Residuals") +
   theme_minimal()
-# End Generation Here
 
 
 september_data <- gallup_data_clean_young %>%
