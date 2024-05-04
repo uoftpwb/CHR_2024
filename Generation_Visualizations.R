@@ -1,4 +1,4 @@
-# CCHS Visualizations for CHR 2024
+# Generation Visualizations for CHR 2024
 # Author: Anthony McCanny
 # Date: April 24, 2024
 ###############################################

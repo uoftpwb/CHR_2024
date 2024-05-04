@@ -3,6 +3,14 @@
 # Date: May 1, 2024
 ###############################################
 
+library(dplyr)
+library(tidyr)
+library(Hmisc)
+library(glmnet)
+library(ggplot2)
+library(glmnet)
+
+seed(381820244) # C = 3, H = 8, R = 18, 2024...
 
 # Load the Gallup data for Canada and perform initial filtering and renaming of variables
 gallup_data_raw <- readRDS("Data/Gallup/GWP_021723_FullyCleaned_Canada.rds") %>%
@@ -21,12 +29,17 @@ gallup_data_raw <- readRDS("Data/Gallup/GWP_021723_FullyCleaned_Canada.rds") %>%
             TRUE ~ NA_character_)) %>%
   # Select columns where less than 50% of the data is missing
   select_if(~ sum(is.na(.)) / length(.) <= 0.5) %>%
-  # Remove rows where life satisfaction (ls) is missing
+  # Create new variables
+  mutate( age2 = age^2,
+          log_income = log(INCOME_2/sqrt(HHSIZE)+0.01)) %>%
+  # Set attributes for new variables with short text descriptions
+  mutate(across(c(age2, log_income), ~`attr<-`(.,"Short Text", c("Age squared", "Log of Equivalized Household Income")[match(cur_column(), c("age2", "log_income"))]))) %>%
   drop_na(ls)
 
 # Identify determinant variables by excluding certain columns and those with 'RECODED' in their names
-determinants <- setdiff(names(gallup_data_raw), c("ls", "WP5889", "WP5", "WAVE", "WPID", "WPID_RANDOM", "WGT", "FIELD_DATE", "COUNTRY_ISO2", "COUNTRY_ISO3", "COUNTRYNEW", "REG_GLOBAL",
-                    "REG2_GLOBAL", "YEAR_CALENDAR", "year", "average_date", "date", "WP13156", "WP16590", "INDEX_LE", "INDEX_ST", "INDEX_TH", "WP18", "WP12258A", "WP12258")) %>%
+determinants <- setdiff(c(names(gallup_data_raw)), c("ls", "WP5889", "WP5", "WAVE", "WPID", "WPID_RANDOM", "WGT", "FIELD_DATE", "COUNTRY_ISO2", "COUNTRY_ISO3", "COUNTRYNEW", "REG_GLOBAL",
+                    "REG2_GLOBAL", "YEAR_CALENDAR", "year", "average_date", "date", "WP13156", "WP16590", "INDEX_LE", "INDEX_ST", "INDEX_TH", "INDEX_OT", "INDEX_SU", "WP18", "INCOME_1", 
+                    "INCOME_2", "INCOME_3", "INCOME_4", "INCOME_7", "WP12258A", "WP12258")) %>%
                     setdiff(grep("RECODED", ., value = TRUE, invert = FALSE))
 
 # Identify binary and categorical columns based on their values
@@ -39,17 +52,51 @@ non_numeric_determinants <- setdiff(determinants, numeric_determinants)
 
 # Clean the data by handling missing values and converting columns to appropriate types
 gallup_data_clean_total <- gallup_data_raw %>%
+  mutate(WP1233 = recode(WP1233,
+                         `0` = "Other Religions",
+                         `1` = "Catholic",
+                         `2` = "Protestant",
+                         `3` = "Orthodox",
+                         `4` = "Islam",
+                         `5` = "Islam",
+                         `6` = "Islam",
+                         `7` = "Other Religions",
+                         `8` = "Hinduism",
+                         `9` = "Buddhism",
+                         `10` = "Primal-Indigenous",
+                         `11` = "Other Religions",
+                         `12` = "Sikhism",
+                         `13` = "Other Religions",
+                         `14` = "Other Religions",
+                         `15` = "Judaism",
+                         `16` = "Other Religions",
+                         `17` = "Other Religions",
+                         `18` = "Other Religions",
+                         `19` = "Other Religions",
+                         `20` = "Other Religions",
+                         `21` = "Other Religions",
+                         `22` = "Other Religions",
+                         `23` = "Other Religions",
+                         `24` = "Other Religions",
+                         `25` = "Other Religions",
+                         `26` = "Secular/Nonreligious/Agnostic/Atheist/None",
+                         `28` = "Other Religions",
+                         `29` = "Other Religions",
+                         `97` = "No response",
+                         `98` = "No response",
+                         `99` = "No response",
+                         .default = as.character(WP1233))) %>%
   # Create new columns to indicate non-missing (1) or missing (0) for each determinant
   mutate(
     across(all_of(determinants), ~if_else(is.na(.), 0, 1), .names = "{.col}_nm")) %>%
   # Handle missing values by replacing them with mean or "missing" depending on the column type
   mutate(
-    across(all_of(numeric_determinants), ~replace_na(., mean(., na.rm = TRUE)), .names = "{.col}"),
-    across(all_of(non_numeric_determinants), ~replace_na(as.character(.), "missing"), .names = "{.col}")) %>%
+    across(all_of(numeric_determinants), ~{ existing_vals <- na.omit(.); replace_na(., sample(existing_vals, size = 1, replace = TRUE)) }, .names = "{.col}"),
+    across(all_of(non_numeric_determinants), ~{ existing_vals <- na.omit(.); replace_na(., sample(existing_vals, size = 1,  replace = TRUE)) }, .names = "{.col}")) %>%
   # Convert binary and categorical columns to factors
   mutate(
     across(all_of(binary_columns), factor),
-    across(all_of(categorical_columns), factor),
+    across(all_of(c(categorical_columns, "year", "province", "WP1233")), factor),
     across(all_of(intersect(names(gallup_data_raw)[ends_with("_nm")], 
         names(gallup_data_raw)[sapply(gallup_data_raw, function(column) all(column %in% c(0,1, NA)) && all(c(0,1) %in% column))])), 
         ~factor(.x, levels = c(0, 1))))
@@ -60,7 +107,7 @@ gallup_data_clean <- gallup_data_clean_total %>%
 
 # Filter the cleaned data for the young age group (15-29)
 gallup_data_clean_young <- gallup_data_clean_total %>%
-    filter(age_ranges == "15-29")
+    filter(age_ranges == "15-29") 
 
 # Generate interaction terms for the linear model
 interaction_terms <- paste0(determinants, ":", determinants, "_nm")
@@ -89,72 +136,180 @@ zero_variance <- sapply(gallup_data_clean_young[determinants], function(x) {
 zero_variance_cols <- names(zero_variance[zero_variance])
 
 
-gallup_data_clean_young_lasso <- gallup_data_clean_young %>%
-  select(all_of(determinants)) %>%
+# Select the proper set of columns before splitting the sample
+gallup_data_clean_young_selected <- gallup_data_clean_young %>%
+  select(all_of(c(determinants, "residuals", "year", "WGT"))) %>%
   select(-all_of(zero_variance_cols)) %>%
   select(-month)
 
-# Run a lasso regression for gallup_data_clean_young using the previously determined interaction terms
-library(glmnet)
+# Split the sample by age into two groups: 15-21 and 22-29
+gallup_data_clean_young_15_21 <- gallup_data_clean_young_selected %>%
+  filter(age >= 15 & age <= 21)
 
-# Prepare the matrix of predictors with just the determinants columns for the lasso regression
-predictors_matrix <- model.matrix(~ . - 1, data = gallup_data_clean_young_lasso)
-
-# Extract the outcome variable (residuals) from the data
-outcome_vector <- gallup_data_clean_young$residuals
-
-# Set alpha to 1 for lasso regression
-lasso_model <- glmnet(predictors_matrix, outcome_vector, alpha = 1)
-
-# Fit the lasso model using cross-validation
-cv_lasso <- cv.glmnet(predictors_matrix, outcome_vector, alpha = 1)
-
-# Get the lambda that gives minimum mean cross-validated error
-optimal_lambda <- cv_lasso$lambda.min
-
-# Refit the lasso model with the optimal lambda
-lasso_model_optimal <- glmnet(predictors_matrix, outcome_vector, alpha = 1, lambda = optimal_lambda)
-
-# Output the coefficients from the lasso regression and select non-zero coefficients
-lasso_coefficients <- coef(lasso_model_optimal)
-non_zero_coefficients <- lasso_coefficients[lasso_coefficients[, 1] != 0, ]
-
-print(non_zero_coefficients)
-
-# Calculate residuals from the optimal lasso model
-lasso_predicted_values <- predict(lasso_model_optimal, newx = predictors_matrix, s = optimal_lambda)
-lasso_residuals <- outcome_vector - lasso_predicted_values
-
-# Add lasso residuals to the gallup_data_clean_young dataframe
-gallup_data_clean_young$lasso_residuals <- lasso_residuals
+gallup_data_clean_young_22_29 <- gallup_data_clean_young_selected %>%
+  filter(age > 21 & age <= 29)
 
 
-# Calculate the average of residuals by year
-average_residuals_by_year <- gallup_data_clean_young %>%
-  dplyr::group_by(year) %>%
+get_readable_label <- function(variable_name) {
+  # Create a named vector of readable labels from gallup_data_clean_young_lasso
+  readable_labels <- sapply(names(gallup_data_raw), function(column_name) {
+    label <- attr(gallup_data_raw[[column_name]], "Short Text")
+    if (is.null(label)) {
+      return(column_name)
+    } else {
+      return(label)
+    }
+  })
+
+  # Check if the variable is a factor by seeing if the base name without the last digit is in the list of variables turned into factors
+  base_variable_name <- sub("\\d$", "", variable_name)
+  is_factor <- base_variable_name %in% c(binary_columns, categorical_columns, "year", "province")
+  # Find the readable label that matches the variable name
+  readable_label <- readable_labels[names(readable_labels) == base_variable_name]
+  province_names <- c("10" = "Newfoundland and Labrador", "11" = "Prince Edward Island", "12" = "Nova Scotia", "13" = "New Brunswick", "24" = "Quebec", "35" = "Ontario", "46" = "Manitoba", "47" = "Saskatchewan", "48" = "Alberta", "59" = "British Columbia", "98" = "(DK)", "99" = "(Refused)")
+  religion_names <- c("0" = "Other", "1" = "Christianity: Roman Catholic", "2" = "Christianity: Protestant", "3" = "Christianity: Eastern Orthodox", "4" = "Islam/Muslim", "5" = "Islam/Muslim (Shiite)", "6" = "Islam/Muslim (Sunni)", "7" = "Druze", "8" = "Hinduism", "9" = "Buddhism", "10" = "Primal-indigenous", "11" = "Chinese Traditional Religion", "12" = "Sikhism", "13" = "Juche", "14" = "Spiritism", "15" = "Judaism", "16" = "Baha'i", "17" = "Jainism", "18" = "Shinto", "19" = "Cao Dai", "20" = "Zoroastrianism", "21" = "Tenrikyo", "22" = "Neo-Paganism", "23" = "Unitarian-Universalism", "24" = "Rastafarianism", "25" = "Scientology", "26" = "Secular/Nonreligious/Agnostic/Atheist/None", "28" = "Christian (not specified)", "29" = "Taoism/Daoism", "97" = "(No response)", "98" = "(DK)", "99" = "(Refused)")
+  if (is_factor) {
+      factor_level <- sub(".*?(\\d)$", "\\1", variable_name)
+      readable_label <- paste(readable_label, factor_level, sep = "_")
+  } else if (grepl("^province\\d{2}$", variable_name)) {
+      province_code <- substring(variable_name, 9, 10)
+      readable_label <- province_names[province_code]
+  } else if (startsWith(variable_name, "WP1233")) {
+      religion_code <- substring(variable_name, 7)
+      readable_label <- religion_code
+  } else if (variable_name == "(Intercept)") {
+      readable_label <- "Intercept"
+  } else {
+      readable_label <- readable_labels[names(readable_labels) == variable_name]
+  }
+  return(readable_label)
+}
+
+calculate_entropy <- function(column) {
+  category_counts <- table(column)
+  category_proportions <- category_counts / sum(category_counts)
+
+  return(-sum(category_proportions * log(category_proportions, base = 2), na.rm = TRUE))
+}
+
+calculate_entropy(predictors_matrix[,"WP176251"])
+
+
+run_lasso_average <- function(data, num_runs = 100) {
+  
+  # Initialize a list to store coefficients from each run
+  coefficients_list <- list()
+
+  predictors_matrix <- model.matrix(~ . - 1 - residuals - year - WGT, data = data)
+
+  low_entropy_columns <- apply(predictors_matrix, 2, function(column) {
+    entropy <- calculate_entropy(column)
+    if (entropy < 0.25) {
+      return(TRUE)
+    } else {
+      return(FALSE)
+    }
+  })
+  
+  predictors_matrix <- predictors_matrix[, !low_entropy_columns]
+  outcome_vector <- data$residuals
+
+
+  for (i in 1:num_runs) {
+    set.seed(i)  # Set a different seed for each run
+    
+    lasso_model <- glmnet(predictors_matrix, outcome_vector, alpha = 1)
+    cv_lasso <- cv.glmnet(predictors_matrix, outcome_vector, alpha = 1)
+    optimal_lambda <- cv_lasso$lambda.min
+    lasso_model_optimal <- glmnet(predictors_matrix, outcome_vector, alpha = 1, lambda = optimal_lambda)
+    
+    lasso_coefficients <- coef(lasso_model_optimal)
+    non_zero_coefficients <- lasso_coefficients[lasso_coefficients[, 1] != 0, ]
+    
+    # Store the non-zero coefficients
+    coefficients_list[[i]] <- non_zero_coefficients
+  }
+  
+  # Assuming 'all_coefficients' contains all possible coefficient names
+  all_coefficients <- unique(unlist(lapply(coefficients_list, names)))
+
+  standardized_coefficients_list <- lapply(coefficients_list, function(coefs) {
+    standardized_coefs <- rep(0, length(all_coefficients))
+    names(standardized_coefs) <- all_coefficients
+    standardized_coefs[names(coefs)] <- coefs
+    return(standardized_coefs)
+  })
+
+  # Now use 'Reduce' to average the coefficients
+  averaged_coefficients <- Reduce("+", standardized_coefficients_list) / length(coefficients_list)
+  
+  # Copy the optimal lasso model to a new variable for averaging coefficients
+  averaged_coef_model <- lasso_model_optimal
+  # Extract the coefficient matrix from the optimal lasso model
+  coef_matrix <- averaged_coef_model$beta
+  # Remove the intercept from the averaged coefficients as we only want to modify the predictors' coefficients
+  averaged_coefficients_red <- averaged_coefficients[names(averaged_coefficients) != "(Intercept)"]
+  # Set the intercept of the averaged_coef_model
+  averaged_coef_model$a0 <- setNames(averaged_coefficients[names(averaged_coefficients) == "(Intercept)"], "s0")
+  # Find the positions of the averaged coefficients in the coefficient matrix
+  index <- match(names(averaged_coefficients_red), rownames(coef_matrix))
+  # Update the coefficient matrix with the averaged coefficients
+  coef_matrix[index] <- averaged_coefficients_red
+  # Assign the updated coefficient matrix back to the model
+  averaged_coef_model$beta <- coef_matrix
+  # Use the updated model to predict values based on the predictors matrix
+  lasso_predicted_values <- predict(averaged_coef_model, newx = predictors_matrix)
+  # Calculate the residuals by subtracting the predicted values from the actual outcome vector
+  lasso_residuals <- outcome_vector - lasso_predicted_values
+  # Add the calculated residuals as a new column in the data
+  data$lasso_residuals <- lasso_residuals
+  
+  non_zero_averaged_coefficients_df <- data.frame(
+    readable_name = as.character(unname(sapply(names(averaged_coefficients), get_readable_label))),
+    name = names(averaged_coefficients),
+    value = as.numeric(unname(averaged_coefficients))
+  )
+    
+  non_zero_averaged_coefficients_df <- non_zero_averaged_coefficients_df[order(-abs(non_zero_averaged_coefficients_df$value)), ]
+  
+  # Return a list with data and non_zero_averaged_coefficients_df
+  return(list(data = data, coef = non_zero_averaged_coefficients_df))
+}
+
+# Run the averaged lasso regression for each age group
+results_15_21 <- run_lasso_average(gallup_data_clean_young_15_21, 10)
+data_15_21 <- results_15_21$data %>% mutate(age_group = "15-21")
+coefficients_15_21 <- results_15_21$coef
+
+
+results_22_29 <- run_lasso_average(gallup_data_clean_young_22_29)
+data_22_29 <- results_22_29$data %>% mutate(age_group = "22-29")
+coefficients_22_29 <- results_22_29$coef
+
+write.csv(coefficients_15_21, "Output/lasso_variables_15_21.csv", row.names = FALSE)
+write.csv(coefficients_22_29, "Output/lasso_variables_22_29.csv", row.names = FALSE)
+
+
+
+combined_data <- rbind(data_15_21, data_22_29) %>%
+  dplyr::group_by(year, age_group) %>%
   dplyr::summarise(average_resid = weighted.mean(residuals, w = WGT, na.rm = TRUE),
                     average_lasso_resid = weighted.mean(lasso_residuals, w = WGT, na.rm = TRUE))
 
-
-
-library(ggplot2)
-
-ggplot(average_residuals_by_year, aes(x = year)) +
-  geom_line(aes(y = average_resid, group = 1), color = "blue") +
-  geom_point(aes(y = average_resid), color = "blue") +
-  geom_line(aes(y = average_lasso_resid, group = 1), color = "red") +
-  geom_point(aes(y = average_lasso_resid), color = "red") +
-  labs(title = "Average of Residuals by Year",
+ggplot(combined_data, aes(x = year, group = age_group)) +
+  geom_line(aes(y = average_resid, color = age_group), linetype = "solid") +
+  geom_point(aes(y = average_resid, color = age_group)) +
+  geom_line(aes(y = average_lasso_resid, color = age_group), linetype = "dashed") +
+  geom_point(aes(y = average_lasso_resid, color = age_group)) +
+  labs(title = "Average of Residuals by Year for Each Age Group",
        x = "Year",
-       y = "Average Residuals") +
+       y = "Average Residuals",
+       color = "Age Group") +
+  scale_color_manual(values = c("15-21" = "blue", "22-29" = "red")) +
   theme_minimal()
 
 
-september_data <- gallup_data_clean_young %>%
-  dplyr::filter(month == "09") %>%
-  select(year)
-  september_year_tally <- september_data %>%
-    dplyr::group_by(year) %>%
-    dplyr::tally()
 
 
+# Example usage:
+# entropy_WP88 <- calculate_entropy(data, "WP88")

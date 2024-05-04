@@ -15,13 +15,19 @@ theme_chr <- function() {
     theme(
           plot.title = element_text(size = rel(1.2)),
           axis.title.x = element_blank(),
-          axis.title.y = element_text(size = rel(1), margin = margin(t = 0, r = 10, b = 0, l = 0)),
+          axis.title.y = element_text(size = rel(1), angle = 90, margin = margin(t = 0, r = 10, b = 0, l = 0)),
           legend.title = element_text(size = rel(0.8)),
           legend.text = element_text(size = rel(0.8)),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           panel.background = element_blank(),
-    )
+          axis.ticks.x = element_line(color = "black"),
+          axis.ticks.x.top = element_line(color = "black"),
+          axis.line.x = element_line(color = "black", lineend = "square"),
+          axis.text.x = element_text(margin = margin(t = 5, r = 0, b = 0, l = 0), hjust = -0.25),
+          plot.background = element_rect(fill = background_colour, color = NA),
+          axis.ticks.length = unit(-0.4, "lines")
+          )
 }
 
 wellbeing_scale_colours <- c("#794979", "#8d4c7c", "#a1507d", "#b4547b", "#c55a77", "#d46171", "#e16b6a", "#eb7761", "#f28557", "#f5944c", "#f5a542")
@@ -872,46 +878,86 @@ anim_save("Output/Plots/animated_canada_youth_plot_gallup.gif", animation = anim
 
 gallup_avg_ls <- gallup_data_raw %>%
   group_by(year, age_ranges) %>%
-  summarize(average_ls = weighted.mean(ls, WGT, na.rm=TRUE)) %>%
+  dplyr::summarize(average_ls = weighted.mean(ls, WGT, na.rm=TRUE)) %>%
   drop_na(age_ranges)
 
 min_y <- 6.0
-max_y <- 8.0
+max_y <- 8.1
 y_breaks <- seq(min_y, max_y, by = 0.5)
-y_fill <- rep(c("white", "grey98"), length.out = length(y_breaks) - 1)
-rect_data <- data.frame(ymin = head(y_breaks, -1), ymax = tail(y_breaks, -1), fill = factor(y_fill))
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
 
 age_group_ls_plot_gallup <- ggplot(gallup_avg_ls, aes(x = year, y = average_ls, group = age_ranges, color = age_ranges)) +
   geom_rect(data = rect_data, 
-          aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax, fill = fill), 
-          color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
   geom_line() +
   geom_point() +
   geom_vline(xintercept = 2020.25, color = "#b41f1f", linetype = "solid", size = 0.5) +
-  geom_text(aes(x = 2020.25, y = 6.0, label = "Pandemic Begins"), color = "#b41f1f", vjust = -0.5, hjust = 0, angle = 90, size = 2.5) +
+  geom_text(aes(x = 2020.25, y = min_y, label = "Pandemic Begins"), color = "#b41f1f", vjust = -0.5, hjust = 0, angle = 90, size = 2.5) +
   labs(title = "Canadian Life Satisfaction by Age (Gallup)",
-        y = "Average Life Satisfaction",
-        color = "Age Groups") +
-  theme_minimal(base_family = "Helvetica") +
-  theme(plot.title = element_text(size = rel(1.2), family = "Helvetica"),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = rel(1), family = "Helvetica", margin = margin(t = 0, r = 10, b = 0, l = 0)),
-        legend.title = element_text(size = rel(0.8), family = "Helvetica"),
-        legend.text = element_text(size = rel(0.8), family = "Helvetica"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank(),
-        aspect.ratio = 1/3) +
+       y = "Average Life Satisfaction",
+       color = "Age Groups") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour)) +
   scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-  scale_x_continuous(breaks = seq(min(gallup_avg_ls$year, na.rm = TRUE), max(gallup_avg_ls$year, na.rm = TRUE), by = 1)) +
-  scale_color_brewer(palette = "Set2", type = "qual") +
-  scale_fill_manual(values = c("white", "grey98"))
+  scale_x_continuous(limits = c(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE))), breaks = seq(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE))-1, by = 1), ""), 
+                     expand = c(0, 0)) +
+  scale_color_manual(values = four_tone_scale_colours)
 
 print(age_group_ls_plot_gallup)
 
-ggsave("Output/Plots/trajectory_by_age_group_Canada_Gallup.png", plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
+ggsave("Output/Plots/trajectory_by_age_group_Canada_Gallup.png", plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave("Output/Plots/trajectory_by_age_group_Canada_Gallup.svg", plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 ggsave("Output/Plots/trajectory_by_age_group_Canada_Gallup.jpg", plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
-ggsave("Output/Plots/trajectory_by_age_group_Canada_Gallup.svg", plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
+
+
+##### Trajectory by FIVE Age-group Overtime
+
+gallup_avg_ls <- gallup_data_raw %>%
+  mutate(age_ranges = case_when(
+            age >= 15 & age < 22 ~ "15-21",
+            age >= 22 & age < 30 ~ "22-29",
+            age >= 30 & age < 45 ~ "30-44",
+            age >= 45 & age < 60 ~ "45-59",
+            age >= 60 & age < 100 ~ "60+",
+            TRUE ~ NA_character_)) %>%
+  group_by(year, age_ranges) %>%
+  dplyr::summarize(average_ls = weighted.mean(ls, WGT, na.rm=TRUE),
+                  sample = n()) %>%
+  drop_na(age_ranges)
+
+min_y <- floor(min(gallup_avg_ls$average_ls, na.rm = TRUE) * 2) / 2
+max_y <- ceiling(max(gallup_avg_ls$average_ls, na.rm = TRUE) * 2) / 2
+y_breaks <- seq(min_y, max_y, by = 0.5)
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+age_group_ls_plot_gallup <- ggplot(gallup_avg_ls, aes(x = year, y = average_ls, group = age_ranges, color = age_ranges)) +
+  geom_rect(data = rect_data, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = 2020.25, color = "#b41f1f", linetype = "solid", size = 0.5) +
+  geom_text(aes(x = 2020.25, y = min_y, label = "Pandemic Begins"), color = "#b41f1f", vjust = -0.5, hjust = 0, angle = 90, size = 2.5) +
+  labs(title = "Canadian Life Satisfaction by Age (Gallup)",
+       y = "Average Life Satisfaction",
+       color = "Age Groups") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour)) +
+  scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+  scale_x_continuous(limits = c(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE))), breaks = seq(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(gallup_avg_ls$year, na.rm = TRUE)), ceiling(max(gallup_avg_ls$year, na.rm = TRUE))-1, by = 1), ""), 
+                     expand = c(0, 0)) +
+  scale_color_manual(values = c("15-21" = six_tone_scale_colours[5], "22-29" = six_tone_scale_colours[1], "30-44" = six_tone_scale_colours[2], "45-59" = six_tone_scale_colours[3], "60+" = six_tone_scale_colours[4]))
+
+print(age_group_ls_plot_gallup)
+
+ggsave("Output/Plots/trajectory_by_five_age_groups_Canada_Gallup.png", plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave("Output/Plots/trajectory_by_five_age_groups_Canada_Gallup.svg", plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave("Output/Plots/trajectory_by_five_age_groups_Canada_Gallup.jpg", plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
+
+
+
+
 
 
 ############ COMBINATION of CCHS, CSS and GALLUP DATA - TRAJECTORIES by AGE GROUP ###################
