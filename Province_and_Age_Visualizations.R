@@ -217,7 +217,7 @@ canada_anim <- canada %>%
     mutate(average_ls = sum(proportion * as.numeric(ls)))
 
 # Create the bar chart
-canada_life_satisfaction_plot <- ggplot(canada_anim, aes(x = as.factor(ls), y = proportion, fill = as.factor(ls))) +
+canada_life_satisfaction_plot <- ggplot(canada_anim %>% filter(year == 2014), aes(x = as.factor(ls), y = proportion, fill = as.factor(ls))) +
     geom_bar(stat = "identity", width = 1) +
     geom_vline(aes(xintercept = average_ls+1), color = "#602582", linetype = "solid", linewidth = 0.5) +
     #geom_text(aes(label = sprintf("Avg: %.2f", average_ls)), x = Inf, y = 1, vjust = -0.5, hjust = 1, color = "#602582", size = 6) +

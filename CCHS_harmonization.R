@@ -957,6 +957,21 @@ for (yr in years) {
   write.csv(subset_data, file = paste0("Output/PROVxLS Tables CCHS/PROVxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
+######################### Mental Health x Age ####################
+mental_health <- cchs %>%
+  drop_na(mental_health) %>%
+  group_by(year, mental_health, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(mental_health$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/AGExMENTALHEALTH Tables CCHS/AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
 ######################### Province X Age Table Generation #############################
 
 provinceXage <- cchs %>%
@@ -1014,83 +1029,126 @@ for (yr in years) {
   write.csv(subset_data, file = paste0("Output/PROVxGENERATIONxLS Tables CCHS/PROVxGENERATIONxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
+######################### Indigenous Table Generation #############################
 
+indigenous <- cchs %>%
+  drop_na(ls, indigenous) %>%
+  group_by(year, indigenous, ls) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup()
 
+years <- unique(indigenous$year)
 
-
-
-######################### Generate a simulated table #############################
-# Define the parameters for the simulated data
-provinces <- c("NL", "PE", "NS", "NB", "QC", "ON", "MB", "SK", "AB", "BC", "YT", "NT", "NU")
-sex <- c("Male", "Female")
-age_groups <- c("15-29", "30-44", "45-59", "60+")
-life_satisfaction_scores <- 0:10
-
-# Approximate population weights by province (in thousands for simplicity)
-province_populations <- c(520, 160, 990, 790, 8600, 14700, 1380, 1180, 4400, 5100, 40, 45, 40)
-
-# Create a data frame by expanding the parameters
-simulated_data <- expand.grid(
-  GEO_PRV = provinces,
-  DHH_SEX = sex,
-  DHH_AGE = age_groups,
-  GEN_010 = life_satisfaction_scores
-)
-
-# Initialize a column for weighted frequencies
-simulated_data$Weighted_Frequency <- NA_integer_
-
-# Assign random weighted frequencies to each combination of province, age group, and life satisfaction score
-# Ensuring that the sum of weights for each province roughly adds up to its population
-set.seed(123) # For reproducibility
-for (prov in provinces) {
-  # Calculate the number of rows for the current province
-  province_rows <- nrow(simulated_data[simulated_data$GEO_PRV == prov, ])
-  
-  # Calculate the total population for the current province
-  province_population <- province_populations[provinces == prov]
-  
-  # Generate random weights that sum up to the province's population
-  # The weights are distributed across the number of rows for the province
-  weights <- runif(province_rows, min = 0, max = 1)
-  weights <- round(weights / sum(weights) * province_population*1000)
-  
-  # Assign the weights to the simulated data
-  simulated_data$Weighted_Frequency[simulated_data$GEO_PRV == prov] <- weights
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- indigenous %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/INDIGENOUSxLS Tables CCHS/INDIGENOUSxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
-# Order the data frame by province, sex, and age group
-simulated_data <- simulated_data[order(simulated_data$GEO_PRV, simulated_data$DHH_SEX, simulated_data$DHH_AGE, simulated_data$GEN_010), ]
+######################### Immigration Status Table Generation #############################
 
-# View the first few rows of the simulated data frame
-head(simulated_data)
+immigration <- cchs %>%
+  drop_na(ls, time_in_canada) %>%
+  group_by(year, time_in_canada, ls) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup()
 
-averages <- sapply(cchs_pumf_2015_2016, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else NA)
-averages[averages > 1500]
+years <- unique(immigration$year)
 
-# Assuming 'dataframe1' and 'dataframe2' are the two dataframes we want to compare
-matching_columns <- intersect(names(cchs_pumf_2013_2014), names(cchs_pumf_2014))
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- indigenous %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/IMMIGRATIONxLS Tables CCHS/IMMIGRATIONxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
 
-# Print out the matching column names
-print(matching_columns)
 
-matching_columns <- matching_columns[!matching_columns %in% c("WTS_M", "VERDATE")]
+##### Function for Generating Stratified Tables #######\
 
-# Find all rows that match on all identified columns
-matching_rows <- inner_join(cchs_pumf_2009_2010, cchs_pumf_2010, by = c("GEOGPRV", "DHHGAGE", "DHH_SEX", "GEODPMF", "DHHGLE5", 
-"DHHG611", "DHHGL12", "DHHGLVG", "DHHGHSZ", "GEN_01", "GEN_02", "GEN_02A2", "GEN_02B", "GEN_07", "GEN_08", "GEN_09", "GEN_10", 
-"GENDHDI", "GENDMHI", "GENGSWL", 
-"CIH_1", "CIH_2", "CIH_3", "CIH_4", "CIH_5", "CIH_6A", "CIH_6I", 
-"CIH_6B", "CIH_6J", "CIH_6K", "CIH_6G", "CIH_6F", "CIH_6E", "CIH_6L", 
-"CIH_6M", "CIH_6N", "CIH_6H", "CIH_7", "CIH_8A", "CIH_8B", "CIH_8C", 
-"CIH_8J", "CIH_8K", "CIH_8G", "CIH_8L", "CIH_8H", "CIH_8I", 
-"HCS_1", "HCS_2", "HCS_3", "HCS_4", "HWT_4", "HWTGHTM", "HWTGWTK", 
-"HWTGBMI", "HWTGISW", "HWTDCOL", "CCC_031", "CCC_035", "CCC_036", 
-"CCC_051", "CCC_061", "CCC_071", "CCC_072", "CCC_073", "CCC_073A", 
-"CCC_073B", "CCC_081", "CCC_091", "CCC_101", "CCCG102", "CCC_10A", 
-"CCC_10B", "CCC_10C", "CCC_105", "CCC_106", "CCC_121", "CCC_131", 
-"CCC_31A", "CCC_141", "CCC_151", "CCC_161", "CCC_171", "CCC_17A", 
-"CCC_280", "CCC_290", "CCCDDIA"))
-# Save the result in a new dataframe
-matched_dataframe <- matching_rows
-cchs
+generate_stratified_tables <- function(data, file_path, stratify_by) {
+  # Ensure the stratify_by variable exists in the dataframe
+  if (!stratify_by %in% names(data)) {
+    stop("The stratify_by variable does not exist in the dataframe.")
+  }
+  
+  # Drop NA values for life satisfaction and the stratification variable
+  stratified_data <- data %>%
+    drop_na(ls, !!sym(stratify_by)) %>%
+    group_by(year, !!sym(stratify_by), ls) %>%
+    summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup()
+
+  # Get unique years
+  years <- unique(stratified_data$year)
+
+  # Loop through each year and save the corresponding subset
+  for (yr in years) {
+    filename_year <- gsub("/", "", yr) # Remove "/" from yr
+    filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+    subset_data <- stratified_data %>% filter(year == yr)
+    
+    # Create the folder if it doesn't exist
+    
+    if (!dir.exists(file_path)) {
+      dir.create(file_path, recursive = TRUE)
+    }
+    
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(stratify_by), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+  }
+}
+
+
+generate_age_stratified_tables <- function(data, file_path, stratify_by) {
+  # Ensure the stratify_by variable exists in the dataframe
+  if (!stratify_by %in% names(data)) {
+    stop("The stratify_by variable does not exist in the dataframe.")
+  }
+  
+  # Drop NA values for life satisfaction, the stratification variable, and age group
+  stratified_data <- data %>%
+    drop_na(ls, !!sym(stratify_by), age_ranges) %>%
+    group_by(year, !!sym(stratify_by), age_ranges, ls) %>%
+    summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup()
+
+  # Get unique years
+  years <- unique(stratified_data$year)
+
+  # Loop through each year and save the corresponding subset
+  for (yr in years) {
+    filename_year <- gsub("/", "", yr) # Remove "/" from yr
+    filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+    subset_data <- stratified_data %>% filter(year == yr)
+    
+    # Create the folder if it doesn't exist
+    if (!dir.exists(file_path)) {
+      dir.create(file_path, recursive = TRUE)
+    }
+    
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(stratify_by), "xAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+  }
+}
+
+
+# Generate Stratified Tables (not by age)
+generate_stratified_tables(cchs, "Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada")
+generate_stratified_tables(cchs, "Output/MINORITYxLS Tables CCHS", "minority")
+generate_stratified_tables(cchs, "Output/MENTALHEALTHxLS Tables CCHS", "mental_health")
+generate_stratified_tables(cchs, "Output/LANGUAGExLS Tables CCHS", "language")
+generate_stratified_tables(cchs, "Output/SEXxLS Tables CCHS", "sex")
+generate_stratified_tables(cchs, "Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity")
+generate_stratified_tables(cchs %>% mutate(poverty = equiv_income <= 25252), "Output/POVERTYxLS Tables CCHS", "poverty")
+
+# Generate Age-Stratified Tables
+generate_age_stratified_tables(cchs, "Output/JOBSATxLS Tables CCHS", "job_sat")
+generate_age_stratified_tables(cchs, "Output/LEISURESATxLS Tables CCHS", "leisure_sat")
+generate_age_stratified_tables(cchs, "Output/FINANCESATxLS Tables CCHS", "finance_sat")
+generate_age_stratified_tables(cchs, "Output/YOUSATxLS Tables CCHS", "you_sat")
+generate_age_stratified_tables(cchs, "Output/BODYSATxLS Tables CCHS", "body_sat")
+generate_age_stratified_tables(cchs, "Output/FAMILYSATxLS Tables CCHS", "family_sat")
+generate_age_stratified_tables(cchs, "Output/FRIENDSSATxLS Tables CCHS", "friends_sat")
+generate_age_stratified_tables(cchs, "Output/HOUSINGSATxLS Tables CCHS", "housing_sat")
+generate_age_stratified_tables(cchs, "Output/NEIGHBOURHOODSATxLS Tables CCHS", "neighbourhood_sat")
+generate_age_stratified_tables(cchs, "Output/PHQ9xLS Tables CCHS", "phq9")
+

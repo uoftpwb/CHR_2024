@@ -1,4 +1,4 @@
-# Demographic Visualizations for CHR 2024
+# Demographic Visualizations (Gallup) for CHR 2024
 # Author: Anthony McCanny
 # Date: May 3, 2024
 ###############################################
@@ -121,9 +121,25 @@ coefficients_22_29 <- read.csv("Output/lasso_variables_22_29.csv")
 create_trajectory_plot(gallup_data_raw, "province == 11", "P.E.I.", "Rest of Canada")
 create_trajectory_plot(gallup_data_raw, "REGION_CAN == 3", "Quebec Residents (not Montreal)", "Rest of Canada")
 create_trajectory_plot(gallup_data_raw, "WP17625 == 1", "Landline Phone at Home", "No Landline Phone")
-create_trajectory_plot(gallup_data_raw, "WP118 == 1", "Assaulted Past Yecar", "Others")
+create_trajectory_plot(gallup_data_raw, "WP118 == 1", "Assaulted Past Year", "Others")
 create_trajectory_plot(gallup_data_raw, "WP1219 == 1", "Men", "Women")
-create_trajectory_plot(gallup_data_raw, "log_income <= 10.14741", "Below Poverty Line", "Above Poverty Line")
+create_trajectory_plot(gallup_data_raw, "log_income <= 11", "Below Poverty Line", "Above Poverty Line")
+
+create_trajectory_plot(gallup_data_raw, "province == 35", "Ontario Residents", "Rest of Canada")
+
+create_trajectory_plot(gallup_data_raw, "WP4657 == 1", "Born in Canada", "Not Born in Canada")
+
+create_trajectory_plot(gallup_data_raw, "WP31 == 3", "SoL Decreasing", "SoL not Decreasing")
+
+create_trajectory_plot(gallup_data_raw, "INCOME_5 <= 2 ", "Bottom 40%", "Other Quintiles")
+
+create_trajectory_plot(gallup_data_raw, "EMP_FTEMP == 1", "Employed Full Time", "Not")
+
+create_trajectory_plot(gallup_data_raw, "REGION_CAN == 4", "Toronto", "Rest of Canada")
+
+create_trajectory_plot_cchs(cchs, "language == 'French'", "French Speakers", "Rest of Canada")
+
+
 
 get_readable_label <- function(variable_name) {
   # Create a named vector of readable labels from gallup_data_clean_young_lasso
@@ -168,7 +184,7 @@ create_trajectory_plot <- function(data, condition, true_label, false_label) {
       age >= 15 & age <= 21 ~ "15-21",
       age > 21 & age <= 29 ~ "22-29",
       TRUE ~ NA_character_
-    )) %>%
+    )) %>% 
     filter(!is.na(age_group)) # Filter out NA age groups
   
   # Calculate average life satisfaction for each age group, by year and binary variable
@@ -194,13 +210,14 @@ age_group_ls_plot_gallup <- ggplot() +
   geom_point(data = filter(gallup_avg_ls, age_group == "22-29"), aes(x = year, y = average_ls, group = binary_var, color = binary_var, shape = "22-29")) +
   labs(title = paste("Youth Life Satisfaction for", tools::toTitleCase(true_label), "(Gallup)"),
        y = "Average Life Satisfaction",
-       color = "Employment Status",
+       color = "Group",
        linetype = "Age Group",
        shape = "Age Group") +
   theme_chr() +
   theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm")) +  # Adjusted legend key width
   scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-  scale_x_continuous(breaks = seq(min(gallup_avg_ls$year, na.rm = TRUE), max(gallup_avg_ls$year, na.rm = TRUE), by = 1)) +
+  scale_x_continuous(limits = c(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE))), breaks = seq(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE))-1, by = 1), ""), 
+                      expand = c(0, 0)) +
   scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(true_label, false_label))) +
   scale_linetype_manual(values = c("15-21" = "dashed", "22-29" = "solid")) +
   scale_shape_manual(values = c("15-21" = 17, "22-29" = 16))
@@ -210,10 +227,70 @@ age_group_ls_plot_gallup <- ggplot() +
   
   # Save the plot in different formats
   true_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", true_label)))
-  ggsave(paste0("Output/Plots/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.png"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Plots/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.jpg"), plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
-  ggsave(paste0("Output/Plots/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.svg"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/Trajectory/PNG/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.png"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/Trajectory/JPG/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.jpg"), plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Plots/Trajectory/SVG/trajectory_by_age_and_", true_label_formatted, "_Canada_Gallup.svg"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 }
+
+create_trajectory_plot_cchs <- function(data, condition, true_label, false_label) {
+  # Create a new binary variable based on the condition
+  data <- data %>%
+    mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
+    mutate(age_group = case_when(
+      age >= 15 & age <= 21 ~ "15-21",
+      age > 21 & age <= 29 ~ "22-29",
+      TRUE ~ NA_character_),
+      year = numeric_year) %>%
+    filter(!is.na(age_group)) # Filter out NA age groups
+  
+  # Calculate average life satisfaction for each age group, by year and binary variable
+  cchs_avg_ls <- data %>%
+    group_by(year, age_group, binary_var) %>%
+    dplyr::summarize(average_ls = weighted.mean(ls, weight, na.rm = TRUE), .groups = "drop")  %>%
+    drop_na(binary_var)
+  
+  # Automatically determine min_y and max_y based on the data
+  min_y <- floor(min(cchs_avg_ls$average_ls, na.rm = TRUE))
+  max_y <- ceiling(max(cchs_avg_ls$average_ls, na.rm = TRUE))
+  y_breaks <- seq(min_y, max_y, by = 0.5)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+  
+  # Create the plot
+age_group_ls_plot_cchs <- ggplot() +
+  geom_rect(data = rect_data, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_line(data = filter(cchs_avg_ls, age_group == "15-21"), aes(x = year, y = average_ls, group = binary_var, color = binary_var, linetype = "15-21")) +
+  geom_line(data = filter(cchs_avg_ls, age_group == "22-29"), aes(x = year, y = average_ls, group = binary_var, color = binary_var, linetype = "22-29")) +
+  geom_point(data = filter(cchs_avg_ls, age_group == "15-21"), aes(x = year, y = average_ls, group = binary_var, color = binary_var, shape = "15-21")) +
+  geom_point(data = filter(cchs_avg_ls, age_group == "22-29"), aes(x = year, y = average_ls, group = binary_var, color = binary_var, shape = "22-29")) +
+  labs(title = paste("Youth Life Satisfaction for", tools::toTitleCase(true_label), "(CCHS)"),
+       y = "Average Life Satisfaction",
+       color = "Group",
+       linetype = "Age Group",
+       shape = "Age Group") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm")) +  # Adjusted legend key width
+  scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+  scale_x_continuous(limits = c(floor(min(data$year, na.rm = TRUE)), ceiling(max(data$year, na.rm = TRUE))), breaks = seq(floor(min(data$year, na.rm = TRUE)), ceiling(max(data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(data$year, na.rm = TRUE)), ceiling(max(data$year, na.rm = TRUE))-1, by = 1), ""), 
+                      expand = c(0, 0)) +
+  scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(true_label, false_label))) +
+  scale_linetype_manual(values = c("15-21" = "dashed", "22-29" = "solid")) +
+  scale_shape_manual(values = c("15-21" = 17, "22-29" = 16))
+
+  # Print the plot
+  print(age_group_ls_plot_cchs)
+  
+  # Save the plot in different formats
+  true_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", true_label)))
+  ggsave(paste0("Output/Plots/Trajectory/PNG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.png"), plot = age_group_ls_plot_cchs + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/Trajectory/JPG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.jpg"), plot = age_group_ls_plot_cchs, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Plots/Trajectory/SVG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.svg"), plot = age_group_ls_plot_cchs + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+}
+
+
+
+
 
 create_sample_size_plot <- function(data, condition, true_label, false_label, age_range1, age_range2) {
   age_range1_bounds <- if (str_detect(age_range1, "\\+")) {
@@ -299,7 +376,7 @@ age_group_sample_size_plot <- ggplot() +
 }
 
 create_sample_size_plot(gallup_data_raw, "log_income <= 10.14741", "Below Poverty Line", "Above Poverty Line", "15-29", "30-44")
-create_sample_size_plot(gallup_data_raw, "REGION_CAN == 3", "Quebec", "Not", "15-29", "30-44")
+create_sample_size_plot(gallup_data_raw, "province == 24", "Quebec", "Not", "15-29", "30-44")
 create_sample_size_plot(gallup_data_raw, "WP118 == 1", "Assaulted Past Year", "Not Assaulted Past Year", "15-21", "22-29")
 # Access to Internet
 create_sample_size_plot(gallup_data_raw, "WP39 == 1", "Internet at Home", "No Internet at Home", "15-21", "22-29")
@@ -317,9 +394,19 @@ create_sample_size_plot(gallup_data_raw, "WP1325 == 1", "Like to Move", "Like to
 
 create_proportion_plot(gallup_data_raw, "WP1325 == 1", "Like to Move Permanently", "15-29", "30+")
 
-assault <- create_proportion_plot(gallup_data_raw, "WP118 == 1", "Assaulted Past Year", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "log_income <= 9.0", "Below Poverty Line", "15-29", "30+")
 
+create_proportion_plot(gallup_data_raw, "WP31 == 3", "SoL Decreasing", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "WP31 == 1", "SoL Increasing", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "WP95 == 1", "Quality of Water Good", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "INCOME_5 == 1", "Lowest Quintile", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "WP134==1", "Freedom in Life", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "WP63 == 1", "Smiled or Laughed", "15-29", "30+")
+create_proportion_plot(gallup_data_raw, "EMP_FTEMP == 1", "Employed Full Time", "15-29", "30+")
 
+assault <- create_proportion_plot(filter(gallup_data_raw, WP1219 == 0), "WP118 == 1", "Women Assaulted Past Year", "15-21", "22-29")
+
+create_sample_size_plot(filter(gallup_data_raw, WP1219 == 0), "WP118 == 1", "Women Assaulted Past Year", "Women Not Assaulted Past Year", "15-21", "22-29")
 
 data = gallup_data_raw; condition = "log_income <= 10.14741"; true_label = "Below Poverty Line"; false_label = "Above Poverty Line"; age_range1 = "15-29"; age_range2 = "30+"
 # Example usage:
@@ -395,3 +482,6 @@ create_proportion_plot <- function(data, condition, true_label, age_range1, age_
   return(proportions)
 
 }
+
+
+torontonians2018 <- filter(gallup_data_raw, REGION_CAN == 4 & year >=2018 & year <= 2019 & age_ranges == "15-29")
