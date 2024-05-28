@@ -16,7 +16,7 @@ library(tidyr)
 ########### Reading CCHS data #############
 
 # Set the path to the directory containing the CSV files
-directory <- "Data"
+directory <- "Data/CCHS PUMF"
 
 # Get the list of CSV files in the directory
 csv_files <- list.files(path = directory, pattern = "\\.csv$", full.names = TRUE)
@@ -972,6 +972,75 @@ for (yr in years) {
   write.csv(subset_data, file = paste0("Output/AGExMENTALHEALTH Tables CCHS/AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
+###################### Mental Health x Age in Quebec ################
+
+mental_health_qc <- cchs %>%
+  drop_na(mental_health) %>%
+  filter(province == "Quebec") %>%
+  group_by(year, mental_health, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(mental_health_qc$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health_qc %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/QUEBEC-AGExMENTALHEALTH Tables CCHS/QUEBEC-AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+
+###################### Mental Health x Age for French Speakers ################
+
+mental_health_fr <- cchs %>%
+  drop_na(mental_health) %>%
+  filter(language %in% c("French")) %>%
+  group_by(year, mental_health, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(mental_health_fr$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health_fr %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/FRENCH-AGExMENTALHEALTH Tables CCHS/FRENCH-AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+###################### Mental Health x Age for English Speaking Quebec Residents ################
+
+mental_health_en_qc <- cchs %>%
+  drop_na(mental_health) %>%
+  filter(language %in% c("English", "English and French"), province == "Quebec") %>%
+  group_by(year, mental_health, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(mental_health_en_qc$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health_en_qc %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/ENGLISH-QUEBEC-AGExMENTALHEALTH Tables CCHS/ENGLISH-QUEBEC-AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+###################### Mental Health x Age for English Speaking CAnadians ################
+
+mental_health_en_ca <- cchs %>%
+  drop_na(mental_health) %>%
+  filter(language %in% c("English", "English and French")) %>%
+  group_by(year, mental_health, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(mental_health_en_ca$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health_en_ca %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/ENGLISH-AGExMENTALHEALTH Tables CCHS/ENGLISH-AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
 ######################### Province X Age Table Generation #############################
 
 provinceXage <- cchs %>%
@@ -1139,6 +1208,14 @@ generate_stratified_tables(cchs, "Output/LANGUAGExLS Tables CCHS", "language")
 generate_stratified_tables(cchs, "Output/SEXxLS Tables CCHS", "sex")
 generate_stratified_tables(cchs, "Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity")
 generate_stratified_tables(cchs %>% mutate(poverty = equiv_income <= 25252), "Output/POVERTYxLS Tables CCHS", "poverty")
+generate_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Output/HOMEOWNERxLS Tables CCHS", "home_owner")
+generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)), "Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday")
+generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)) %>% filter(age_ranges == "15-29"), "Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday")
+generate_stratified_tables(cchs, "Output/SCREENTIMEWExLS Tables CCHS", "screentime_weekend")
+generate_stratified_tables(cchs, "Output/SCREENTIMExLS Tables CCHS", "screentime_week")
+
+
+
 
 # Generate Age-Stratified Tables
 generate_age_stratified_tables(cchs, "Output/JOBSATxLS Tables CCHS", "job_sat")
@@ -1151,4 +1228,77 @@ generate_age_stratified_tables(cchs, "Output/FRIENDSSATxLS Tables CCHS", "friend
 generate_age_stratified_tables(cchs, "Output/HOUSINGSATxLS Tables CCHS", "housing_sat")
 generate_age_stratified_tables(cchs, "Output/NEIGHBOURHOODSATxLS Tables CCHS", "neighbourhood_sat")
 generate_age_stratified_tables(cchs, "Output/PHQ9xLS Tables CCHS", "phq9")
+generate_age_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Output/HOMEOWNERxAGExLS Tables CCHS", "home_owner")
+generate_age_stratified_tables(cchs , "Output/SCREENTIMExAGExLS Tables CCHS", "screentime_week")
 
+######################### Screentime x Age ####################
+screentime_medians <- cchs %>%
+  mutate(screentime_num = case_when(
+    screentime_week == "Less than 5 hours" ~ 2.5,
+    screentime_week == "From 5 to 9 hours" ~ 7,
+    screentime_week == "From 10 to 14 hours" ~ 12,
+    screentime_week == "From 15 to 19 hours" ~ 17,
+    screentime_week == "From 20 to 24 hours" ~ 22,
+    screentime_week == "From 25 to 29 hours" ~ 27,
+    screentime_week == "From 30 to 34 hours" ~ 32,
+    screentime_week == "From 35 to 39 hours" ~ 37,
+    screentime_week == "From 40 to 44 hours" ~ 42,
+    screentime_week == "45 hours or more" ~ 47,
+    TRUE ~ NA_real_
+  )) %>%
+  drop_na(screentime_num) %>%
+  group_by(year, screentime_num, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(screentime_medians$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- screentime_medians %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/AGExSCREENTIME Tables CCHS/AGExSCREENTIME_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+screentime_medians <- cchs %>%
+  mutate(screentime_we = case_when(
+    screentime_weekend == "2 hours or less per day" ~ 1,
+    screentime_weekend == "More than 2 hours but less than 4 hours" ~ 3,
+    screentime_weekend == "4 hours to less than 6 hours" ~ 5,
+    screentime_weekend == "6 hours to less than 8 hours" ~ 7,
+    screentime_weekend == "8 hours or more per day" ~ 9,
+    TRUE ~ NA_real_
+  )) %>%
+  drop_na(screentime_we) %>%
+  group_by(year, screentime_we, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(screentime_medians$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- screentime_medians %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/AGExSCREENTIMEWEEKEND Tables CCHS/AGExSCREENTIMEWEEKEND_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+screentime_medians <- cchs %>%
+  mutate(screentime_wd = case_when(
+    screentime_weekday == "2 hours or less per day" ~ 1,
+    screentime_weekday == "More than 2 hours but less than 4 hours" ~ 3,
+    screentime_weekday == "4 hours to less than 6 hours" ~ 5,
+    screentime_weekday == "6 hours to less than 8 hours" ~ 7,
+    screentime_weekday == "8 hours or more per day" ~ 9,
+    TRUE ~ NA_real_
+  )) %>%
+  drop_na(screentime_wd) %>%
+  group_by(year, screentime_wd, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE))
+
+years <- unique(screentime_medians$year)
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- screentime_medians %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/AGExSCREENTIMEWEEKDAY Tables CCHS/AGExSCREENTIMEWEEKDAY_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}

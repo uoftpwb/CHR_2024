@@ -197,7 +197,7 @@ ggplot(provinces_20192020, aes(x = reorder(factor(province), average_ls), y = fr
 
 
 
-############### Animated Plots of Temporal Change in Distribtuions for Canada #########3
+############### Animated Plots of Temporal Change in Distribtuions for Canada #########
 
 library(gganimate)
 library(gapminder)
@@ -698,11 +698,9 @@ canada_by_year_gallup <- canada_gallup %>%
   mutate(cumsum = cumsum(proportion),
          label_pos = cumsum - 0.5 * proportion)
 
-
 # Create a color palette and assign to life satisfaction levels
 wellbeing_scale_separate <- wellbeing_scale_colours_separate %>%
                    setNames(ls_levels_ordered)
-
 
 # Prepare label data for life satisfaction levels 5 or below in the year 2014
 label_data <- canada_by_year_gallup %>%

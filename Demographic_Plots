@@ -140,6 +140,8 @@ group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
 ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
 ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
 ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+
+return(plot_data)
 }
 
 
@@ -151,7 +153,7 @@ create_demographic_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == 
 
 create_demographic_plot("Output/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada 2015-2018")
 
-create_demographic_plot("Output/MENTALHEALTHxLS Tables CCHS", "mental_health == 0", "Poor Mental Health", "Other Canadians", "Life Satisfaction of Canadians with Poor Mental Health 2015-2018")
+mh <- create_demographic_plot("Output/MENTALHEALTHxLS Tables CCHS", "mental_health <= 0", "Poor Mental Health", "Other Canadians", "Life Satisfaction of Canadians with Poor Mental Health 2015-2018")
 
 create_demographic_plot("Output/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who speak French at Home 2015-2018")
 
@@ -160,6 +162,14 @@ create_demographic_plot("Output/SEXxLS Tables CCHS", "sex == 'Female'", "Female"
 create_demographic_plot("Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity == 'Sexual minorities'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada 2015-2018")
 
 create_demographic_plot("Output/POVERTYxLS Tables CCHS", "poverty == TRUE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians 2015-2018")
+
+create_demographic_plot("Output/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "Non-Home Owners", "Home Owner", "Life Satisfaction of Non-Home Owning Canadians 2015-2018")
+
+create_demographic_plot("Output/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
+
+create_demographic_plot("Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
+
+create_demographic_plot("Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
 
 
 
@@ -213,8 +223,11 @@ ggsave("Output/Plots/trajectory_by_mental_health_age_ranges_Canada_CCHS.png", pl
 ggsave("Output/Plots/trajectory_by_mental_health_age_ranges_Canada_CCHS.svg", plot = mental_health_age_plot + theme_void() + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 ggsave("Output/Plots/trajectory_by_mental_health_age_ranges_Canada_CCHS.jpg", plot = mental_health_age_plot, width = 9, height = 3, dpi = 300)
 
+## Calculate statistics on mental_health decline
+mental_health_data %>% filter(age_ranges == "15-29") %>% group_by(year) %>% summarize(low_mh = sum(frequency[mental_health %in% 0:1]) / sum(frequency))
+filter(year %in% c(2013, 201718), age_ranges == "15-29", mental_health %in% 0:3) %>% group_by(year) %>% summarize(proportion = sum(frequency))
 
-generate_trajectory_plot_non_ls <- function(file_path, variable_name, y_axis_name, plot_title) {
+generate_trajectory_plot_non_ls <- function(file_path, variable_name, y_axis_name, plot_title, save_tag = NULL) {
   # Load the data
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
@@ -261,10 +274,13 @@ generate_trajectory_plot_non_ls <- function(file_path, variable_name, y_axis_nam
   # Print the plot
   print(plot)
 
+  # Define the save tag if provided
+  save_tag <- ifelse(is.null(save_tag), "", paste0("_", save_tag))
+
   # Save the plot in different formats
-  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS.png"), plot = plot + theme_void() + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS.svg"), plot = plot + theme_void() + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS.jpg"), plot = plot, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS", save_tag, ".png"), plot = plot + theme_void() + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS", save_tag, ".svg"), plot = plot + theme_void() + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/trajectory_by_", variable_name, "_age_ranges_Canada_CCHS", save_tag, ".jpg"), plot = plot, width = 9, height = 3, dpi = 300)
 }
 
 generate_trajectory_plot_non_ls("Output/JOBSATxLS Tables CCHS", "job_sat", "Job Satisfaction", "Job Satisfaction Over Time")
@@ -277,3 +293,87 @@ generate_trajectory_plot_non_ls("Output/FRIENDSSATxLS Tables CCHS", "friends_sat
 generate_trajectory_plot_non_ls("Output/HOUSINGSATxLS Tables CCHS", "housing_sat", "Housing Satisfaction", "Housing Satisfaction Over Time")
 generate_trajectory_plot_non_ls("Output/NEIGHBOURHOODSATxLS Tables CCHS", "neighbourhood_sat", "Neighbourhood Satisfaction", "Neighbourhood Satisfaction Over Time")
 generate_trajectory_plot_non_ls("Output/PHQ9xLS Tables CCHS", "phq9", "PHQ-9 Score", "PHQ-9 Scores Over Time")
+generate_trajectory_plot_non_ls("Output/AGExSCREENTIME Tables CCHS", "screentime_num", "Screentime", "Screentime Over Time")
+generate_trajectory_plot_non_ls("Output/AGExSCREENTIMEWEEKEND Tables CCHS", "screentime_we", "Screentime", "Weekend Screentime Over Time")
+generate_trajectory_plot_non_ls("Output/AGExSCREENTIMEWEEKDAY Tables CCHS", "screentime_wd", "Screentime", "Weekday  Screentime Over Time")
+generate_trajectory_plot_non_ls("Output/QUEBEC-AGExMENTALHEALTH Tables CCHS", "mental_health", "Average Self-Reported Mental Health", "Average Mental Health (on a 0-4 scale) across Age Groups in Quebec (CCHS)", save_tag="QC")
+generate_trajectory_plot_non_ls("Output/AGExMENTALHEALTH Tables CCHS", "mental_health", "Average Self-Reported Mental Health", "Average Mental Health (on a 0-4 scale) across Age Groups in Canada (CCHS)")
+generate_trajectory_plot_non_ls("Output/FRENCH-AGExMENTALHEALTH Tables CCHS", "mental_health", "Average Self-Reported Mental Health", "Average Mental Health (on a 0-4 scale) across Age Groups for French Speakers (CCHS)", save_tag="FR")
+generate_trajectory_plot_non_ls("Output/ENGLISH-QUEBEC-AGExMENTALHEALTH Tables CCHS", "mental_health", "Average Self-Reported Mental Health", "Average Mental Health (on a 0-4 scale) across Age Groups for English Speaking Quebec Residents (CCHS)", save_tag="EN_QC")
+generate_trajectory_plot_non_ls("Output/ENGLISH-AGExMENTALHEALTH Tables CCHS", "mental_health", "Average Self-Reported Mental Health", "Average Mental Health (on a 0-4 scale) across Age Groups for English Speakers in Canada (CCHS)", save_tag="EN_CA")
+generate_trajectory_plot_non_ls("Output/HOMEOWNERxAGExLS Tables CCHS", "home_owner", "Proportion Homeowners", "Average Rate of Homeownership Over Time")
+
+file_path = "Output/HOMEOWNERxAGExLS Tables CCHS"; condition = "home_owner == TRUE"; true_label = "Homeowners"; false_label="Non-homeowners"
+
+create_trajectory_plot_cchs <- function(file_path, condition, true_label, false_label) {
+  # Load the data
+  data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
+    purrr::map_dfr(~ read.csv(.x) %>%
+      mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x)))))
+
+  # Process Data
+  plot_data <- data %>%
+    mutate(display_year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year),
+                                    year == 201516 ~ 2016,
+                                    year == 201718 ~ 2018,
+                                    year == 201920 ~ 2020)) %>%
+    drop_na(age_ranges) %>%
+    mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
+    mutate(young = age_ranges == "15-29") %>%
+    group_by(display_year, young, binary_var) %>%
+    mutate(proportion = frequency / sum(frequency)) %>%
+    summarize(average_ls = sum(proportion * as.numeric(ls)), .groups = 'drop')
+
+  # Automatically determine min_y and max_y based on the data
+  min_y <- floor(min(plot_data$average_ls, na.rm = TRUE))
+  max_y <- ceiling(max(plot_data$average_ls, na.rm = TRUE))
+  y_breaks <- seq(min_y, max_y, by = 0.5)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+  # Create the plot
+  age_group_ls_plot_cchs <- ggplot(plot_data, aes(x = display_year, y = average_ls, group = binary_var, color = binary_var)) +
+    geom_rect(data = rect_data, 
+              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+    geom_line(data = filter(plot_data, young == TRUE), aes(x = display_year, y = average_ls, group = binary_var, color = binary_var, linetype = "15-29")) +
+    geom_line(data = filter(plot_data, young == FALSE), aes(x = display_year, y = average_ls, group = binary_var, color = binary_var, linetype = "30+")) +
+    geom_point(data = filter(plot_data, young == TRUE), aes(x = display_year, y = average_ls, group = binary_var, color = binary_var, shape = "15-29")) +
+    geom_point(data = filter(plot_data, young == FALSE), aes(x = display_year, y = average_ls, group = binary_var, color = binary_var, shape = "30+")) +
+    labs(title = paste("Youth Life Satisfaction for", tools::toTitleCase(true_label), "(CCHS)"),
+         y = "Average Life Satisfaction",
+         color = "Group",
+         linetype = "Age Ranges",
+         shape = "Age Ranges") +
+    theme_chr() +
+    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm")) +  # Adjusted legend key width
+    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+    scale_x_continuous(limits = c(floor(min(plot_data$display_year, na.rm = TRUE)), ceiling(max(plot_data$display_year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$display_year, na.rm = TRUE)), ceiling(max(plot_data$display_year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$display_year, na.rm = TRUE)), ceiling(max(plot_data$display_year, na.rm = TRUE))-1, by = 1), ""), 
+                      expand = c(0, 0)) +
+    scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(true_label, false_label))) +
+    scale_linetype_manual(values = c("30+" = "solid", "15-29" = "dashed")) +
+    scale_shape_manual(values = c("30+" = 16, "15-29" = 17))
+
+  # Print the plot
+  print(age_group_ls_plot_cchs)
+  
+  # Save the plot in different formats
+  true_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", true_label)))
+  ggsave(paste0("Output/Plots/Trajectory/PNG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.png"), plot = age_group_ls_plot_cchs + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Plots/Trajectory/JPG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.jpg"), plot = age_group_ls_plot_cchs, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Plots/Trajectory/SVG/trajectory_by_age_and_", true_label_formatted, "_Canada_CCHS.svg"), plot = age_group_ls_plot_cchs + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+}
+
+
+create_trajectory_plot_cchs(
+  file_path = "Output/HOMEOWNERxAGExLS Tables CCHS",
+  condition = "home_owner == TRUE",
+  true_label = "Homeowners",
+  false_label = "Non-homeowners"
+)
+
+create_trajectory_plot_cchs(
+  file_path = "Output/SCREENTIMExAGExLS Tables CCHS",
+  condition = "screentime_week %in% c('From 35 to 39 hours', 'From 30 to 34 hours', 'From 40 to 44 hours', '45 hours or more')",
+  true_label = "30 or more hours",
+  false_label = "Less than 30 hours"
+)

@@ -41,6 +41,8 @@ six_tone_scale_colours <- c("#da7170", "#eea449", "#b6bd58", "#8a5c7c", "#006ba2
 ############## GALLUP DATA ####################
 
 # Load the Gallup data for Canada and perform initial filtering and renaming of variables
+
+            
 gallup_data_raw <- readRDS("Data/Gallup/GWP_021723_FullyCleaned_Canada.rds") %>%
   filter(COUNTRYNEW == "Canada") %>%
   rename(year = YEAR_WAVE, ls = WP16, age = WP1220, date = WP4, province = REGION2_CAN) %>%
@@ -463,7 +465,7 @@ create_proportion_plot <- function(data, condition, true_label, age_range1, age_
     theme_chr() +
     theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm")) +
     scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-    scale_x_continuous(limits = c(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE))), breaks = seq(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(sample_size$year, na.rm = TRUE)), ceiling(max(sample_size$year, na.rm = TRUE))-1, by = 1), ""), 
+    scale_x_continuous(limits = c(floor(min(proportions$year, na.rm = TRUE)), ceiling(max(proportions$year, na.rm = TRUE))), breaks = seq(floor(min(proportions$year, na.rm = TRUE)), ceiling(max(proportions$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(proportions$year, na.rm = TRUE)), ceiling(max(proportions$year, na.rm = TRUE))-1, by = 1), ""), 
                       expand = c(0, 0)) +
     scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(age_range1, age_range2)))
 
@@ -482,6 +484,31 @@ create_proportion_plot <- function(data, condition, true_label, age_range1, age_
   return(proportions)
 
 }
+cchs_home_owner <- cchs %>%
+  mutate(year = case_when(year == "2017/2018" ~ "2018", year == "2015/2016" ~ "2016", TRUE ~ year)) %>% 
+  mutate(year = as.numeric(year)) %>%
+  mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home")
+
+create_proportion_plot(cchs_home_owner, "home_owner == TRUE", "Home Owner", "15-29", "30+")
+
+cchs_screentime <- cchs %>%
+  mutate(year = case_when(year == "2017/2018" ~ "2018", year == "2015/2016" ~ "2016", TRUE ~ year)) %>% 
+  mutate(year = as.numeric(year)) %>%
+  mutate(screentime_num = case_when(
+    screentime_week == "Less than 5 hours" ~ 2.5,
+    screentime_week == "From 5 to 9 hours" ~ 7,
+    screentime_week == "From 10 to 14 hours" ~ 12,
+    screentime_week == "From 15 to 19 hours" ~ 17,
+    screentime_week == "From 20 to 24 hours" ~ 22,
+    screentime_week == "From 25 to 29 hours" ~ 27,
+    screentime_week == "From 30 to 34 hours" ~ 32,
+    screentime_week == "From 35 to 39 hours" ~ 37,
+    screentime_week == "From 40 to 44 hours" ~ 42,
+    screentime_week == "45 hours or more" ~ 47,
+    TRUE ~ NA_real_
+  ))
+
+  create_proportion_plot(cchs_screentime, "screentime_num >= 30", "30 hours or more", "15-29", "30+")
 
 
 torontonians2018 <- filter(gallup_data_raw, REGION_CAN == 4 & year >=2018 & year <= 2019 & age_ranges == "15-29")
