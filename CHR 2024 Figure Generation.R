@@ -245,11 +245,10 @@ canada <- province %>%
 
 #### GENERATE TRAJECTORY PLOTS #####
 # Generate the first plot using Gallup data
-data <- gallup
-override_filename <- "gallup_ls_trajectory_canada"
-override_title <- "Evaluations of Life in Canada"
+gallup_filename <- "gallup_ls_trajectory_canada"
+gallup_title <- "Evaluations of Life in Canada"
 
-plot_data <- data %>%
+plot_data <- gallup %>%
   mutate(young = age_ranges == "15-29") %>%
   group_by(year) %>%
   dplyr::summarize(
@@ -273,10 +272,10 @@ gallup_trajectory_ls <- ggplot() +
   geom_rect(data = rect_data, 
             aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
             fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-  geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = four_tone_scale_colours[colour], alpha = 0.2) +
+  geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = six_tone_scale_colours[5], alpha = 0.2) +
   geom_line(data = plot_data, aes(x = year, y = average_ls), color = six_tone_scale_colours[5]) +
   geom_point(data = plot_data, aes(x = year, y = average_ls), color = six_tone_scale_colours[5]) +
-  labs(title = override_title,
+  labs(title = gallup_title,
        y = "Average Life Evaluation",
        color = "Group",
        caption = "Data Source: Gallup World Poll") +
@@ -289,11 +288,11 @@ gallup_trajectory_ls <- ggplot() +
 print(gallup_trajectory_ls)
 
 # Save the plot in different formats
-base_filename <- override_filename
+base_filename <- gallup_filename
 
-ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 9, height = 3, dpi = 300)
-ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 3, height = 1, dpi = 900, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 # Generate the CCHS plot data
 file_path_cchs <- "Output/AGExLS Tables CCHS"
@@ -361,8 +360,87 @@ combined_trajectory_ls <- ggplot() +
 print(combined_trajectory_ls)
 
 base_filename <- "combined_trajectory_ls"
-ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
-ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 
+# List of required packages
+packages <- c("sf", "rgdal", "geojsonio", "spdplyr", "rmapshaper", "magrittr", "dplyr", "tidyr", "ggplot2")
+
+# Install packages if they are not already installed
+install_if_missing <- function(p) {
+  if (!requireNamespace(p, quietly = TRUE)) {
+    install.packages(p)
+  }
+}
+
+# Apply the function to each package
+invisible(lapply(packages, install_if_missing))
+
+# Load the packages
+lapply(packages, library, character.only = TRUE)
+
+
+canada_raw = readOGR(dsn = "data", layer = "gcd_000b11a_e", encoding = 'latin1') # 1
+canada_raw_json <- geojson_json(canada_raw) # 2
+canada_raw_sim <- ms_simplify(canada_raw_json) # 3
+geojson_write(canada_raw_sim, file = "data/canada_cd_sim.geojson") # 4
+
+canada_cd <- st_read("data/canada_cd_sim.geojson", quiet = TRUE) # 1
+crs_string = "+proj=lcc +lat_1=49 +lat_2=77 +lon_0=-91.52 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs" # 2
+
+# Define the maps' theme -- remove axes, ticks, borders, legends, etc.
+theme_map <- function(base_size=9, base_family="") { # 3
+	require(grid)
+	theme_bw(base_size=base_size, base_family=base_family) %+replace%
+		theme(axis.line=element_blank(),
+			  axis.text=element_blank(),
+			  axis.ticks=element_blank(),
+			  axis.title=element_blank(),
+			  panel.background=element_blank(),
+			  panel.border=element_blank(),
+			  panel.grid=element_blank(),
+			  panel.spacing=unit(0, "lines"),
+			  plot.background=element_blank(),
+			  legend.justification = c(0,0),
+			  legend.position = c(0,0)
+		)
+}
+# Define the filling colors for each province; max allowed is 9 but good enough for the 13 provinces + territories
+map_colors <- RColorBrewer::brewer.pal(9, "Pastel1") %>% rep(37) # 4
+
+# Plot the maps
+ggplot() +
+	geom_sf(aes(fill = PRUID), color = "gray60", size = 0.1, data = canada_cd) + # 5
+	coord_sf(crs = crs_string) + # 6
+	scale_fill_manual(values = map_colors) +
+	guides(fill = FALSE) +
+	theme_map() +
+	theme(panel.grid.major = element_line(color = "white"),
+		  legend.key = element_rect(color = "gray40", size = 0.1))
+
+
+library(canadianmaps)
+library(dplyr)
+library(ggplot2)
+
+# Get the provincial boundary data
+data("PROV")
+
+# Assuming 'provinces' is a dataframe with columns 'province' and 'ls'
+# Calculate the weighted average of 'ls' for each province
+weighted_avg_ls <- province %>%
+  group_by(province) %>%
+  dplyr::summarize(weighted_avg_ls = weighted.mean(ls, w = frequency, na.rm = TRUE))
+
+# Merge the weighted averages with the provincial boundary data
+PROV$weighted_avg_ls <- weighted_avg_ls$weighted_avg_ls[match(PROV$PRENAME, weighted_avg_ls$province)]
+# Plot the map with each province colored by the weighted average of 'ls'
+ggplot(data = PROV) +
+  geom_sf(aes(fill = weighted_avg_ls), color = "black") +
+  scale_fill_gradientn(colors = wellbeing_scale_colours, na.value = "grey50") +
+  theme_minimal() +
+  labs(title = "Map of Canada with Weighted Average of LS by Province",
+       fill = "Weighted Avg LS") +
+  coord_sf(crs = st_crs(3347))  # Using the Lambert Conformal Conic projection
