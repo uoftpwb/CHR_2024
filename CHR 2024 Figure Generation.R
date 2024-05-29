@@ -227,10 +227,9 @@ provinceRTRA <- RTRA_list %>%  # Start a chain of commands using the file_list v
     AGEGROUP == ".toless15" ~ NA_character_,
     AGEGROUP == "15toless3" ~ "15-29",
     AGEGROUP == "30toless4" ~ "30-44",
-    AGEGROUP == "45toless6" ~ "45-60",
+    AGEGROUP == "45toless6" ~ "45-59",
     AGEGROUP == "60andup" ~ "60+",
     TRUE ~ "All ages")) %>%
-  filter(AGEGROUP == "All ages") %>%
   select(province, year, ls, age_ranges=AGEGROUP, frequency = X_COUNT_)
 
 # Combine PUMF and RTRA dataframes
@@ -290,9 +289,9 @@ print(gallup_trajectory_ls)
 # Save the plot in different formats
 base_filename <- gallup_filename
 
-ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 3, height = 1, dpi = 900, bg = "transparent")
-ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 9, height = 3, dpi = 300)
-ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 900, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 8, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 300, bg = "transparent")
 
 # Generate the CCHS plot data
 file_path_cchs <- "Output/AGExLS Tables CCHS"
@@ -365,62 +364,9 @@ ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined
 ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 
-# List of required packages
-packages <- c("sf", "rgdal", "geojsonio", "spdplyr", "rmapshaper", "magrittr", "dplyr", "tidyr", "ggplot2")
+###### AGE-STANDARDIZED PROVINCIAL MAP #######
 
-# Install packages if they are not already installed
-install_if_missing <- function(p) {
-  if (!requireNamespace(p, quietly = TRUE)) {
-    install.packages(p)
-  }
-}
-
-# Apply the function to each package
-invisible(lapply(packages, install_if_missing))
-
-# Load the packages
-lapply(packages, library, character.only = TRUE)
-
-
-canada_raw = readOGR(dsn = "data", layer = "gcd_000b11a_e", encoding = 'latin1') # 1
-canada_raw_json <- geojson_json(canada_raw) # 2
-canada_raw_sim <- ms_simplify(canada_raw_json) # 3
-geojson_write(canada_raw_sim, file = "data/canada_cd_sim.geojson") # 4
-
-canada_cd <- st_read("data/canada_cd_sim.geojson", quiet = TRUE) # 1
-crs_string = "+proj=lcc +lat_1=49 +lat_2=77 +lon_0=-91.52 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs" # 2
-
-# Define the maps' theme -- remove axes, ticks, borders, legends, etc.
-theme_map <- function(base_size=9, base_family="") { # 3
-	require(grid)
-	theme_bw(base_size=base_size, base_family=base_family) %+replace%
-		theme(axis.line=element_blank(),
-			  axis.text=element_blank(),
-			  axis.ticks=element_blank(),
-			  axis.title=element_blank(),
-			  panel.background=element_blank(),
-			  panel.border=element_blank(),
-			  panel.grid=element_blank(),
-			  panel.spacing=unit(0, "lines"),
-			  plot.background=element_blank(),
-			  legend.justification = c(0,0),
-			  legend.position = c(0,0)
-		)
-}
-# Define the filling colors for each province; max allowed is 9 but good enough for the 13 provinces + territories
-map_colors <- RColorBrewer::brewer.pal(9, "Pastel1") %>% rep(37) # 4
-
-# Plot the maps
-ggplot() +
-	geom_sf(aes(fill = PRUID), color = "gray60", size = 0.1, data = canada_cd) + # 5
-	coord_sf(crs = crs_string) + # 6
-	scale_fill_manual(values = map_colors) +
-	guides(fill = FALSE) +
-	theme_map() +
-	theme(panel.grid.major = element_line(color = "white"),
-		  legend.key = element_rect(color = "gray40", size = 0.1))
-
-
+library(sf)
 library(canadianmaps)
 library(dplyr)
 library(ggplot2)
@@ -428,19 +374,143 @@ library(ggplot2)
 # Get the provincial boundary data
 data("PROV")
 
-# Assuming 'provinces' is a dataframe with columns 'province' and 'ls'
-# Calculate the weighted average of 'ls' for each province
-weighted_avg_ls <- province %>%
-  group_by(province) %>%
+years_to_plot <- c(2009, 2018, 2022)
+province_map_data <- province %>%
+  mutate(year = if_else(year==201718, 2018, year)) %>%
+  filter(year %in% years_to_plot) %>%
+  group_by(province, year) %>%
   dplyr::summarize(weighted_avg_ls = weighted.mean(ls, w = frequency, na.rm = TRUE))
 
+# Handle the special case for territories in 2009
+territories_2009 <- province_map_data %>%
+  filter(year == 2009 & province == "Yukon/Northwest Territories/Nunavut") %>%
+  mutate(province = list(c("Yukon", "Northwest Territories", "Nunavut"))) %>%
+  unnest(province)
+
+# Handle the special case for territories in 2022
+territories_2022 <- tibble(
+  province = c("Yukon", "Northwest Territories", "Nunavut"),
+  year = 2022,
+  weighted_avg_ls = NA_real_
+)
+# Combine the modified data
+province_map_data <- province_map_data %>%
+  filter(!(year == 2009 & province == "Yukon/Northwest Territories/Nunavut")) %>%
+  bind_rows(territories_2009, territories_2022)
+
 # Merge the weighted averages with the provincial boundary data
-PROV$weighted_avg_ls <- weighted_avg_ls$weighted_avg_ls[match(PROV$PRENAME, weighted_avg_ls$province)]
-# Plot the map with each province colored by the weighted average of 'ls'
+PROV <- PROV %>%
+  left_join(province_map_data, by = c("PRENAME" = "province"))
+
+# Plot the maps with each province colored by the weighted average of 'ls' for the specified years
 ggplot(data = PROV) +
+  theme_minimal() + 
   geom_sf(aes(fill = weighted_avg_ls), color = "black") +
-  scale_fill_gradientn(colors = wellbeing_scale_colours, na.value = "grey50") +
-  theme_minimal() +
-  labs(title = "Map of Canada with Weighted Average of LS by Province",
-       fill = "Weighted Avg LS") +
-  coord_sf(crs = st_crs(3347))  # Using the Lambert Conformal Conic projection
+  scale_fill_gradientn(colors = wellbeing_scale_colours, na.value = "grey50", limits = c(7.8, 8.3)) +
+  labs(title = "Average Life Satisfaction by Province",
+      fill = "Average Life Satisfaction",
+      caption = "Data Source: Canadian Community Health Survey") +
+  coord_sf(crs = st_crs(3347)) +  # Using the Lambert Conformal Conic projection
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+        strip.text = element_text(size = 14),
+        plot.caption = element_text(hjust = 0, size = 8, face = "italic")) + 
+  facet_wrap(~ year, ncol = 1)
+# Export the map to different formats
+map_plot <- last_plot()
+ggsave("Output/Final Plots/PNG/province_map.png", plot = map_plot, width = 10, height = 15, dpi = 300)
+ggsave("Output/Final Plots/JPG/province_map.jpg", plot = map_plot, width = 10, height = 15, dpi = 300)
+ggsave("Output/Final Plots/SVG/province_map.svg", plot = map_plot, width = 10, height = 15, dpi = 300)
+
+# Duplicate territories in 2009, duplicate territories with NA in 2022, 
+# Remove labels
+# Remove y axis labels
+
+
+
+
+###########################################################################################################
+############################################    APPENDIX    ###############################################
+###########################################################################################################
+
+
+###### Age-Standardized Provincial Map #######
+
+data("PROV")
+
+# Assuming 'provinces' is a dataframe with columns 'province' and 'ls'
+# Calculate the weighted average of 'ls' for each province for the years 2009, 201718, and 2022
+years_to_plot <- c(2009, 2018, 2022)
+
+# Calculate the overall age makeup of Canada in 2022
+overall_age_makeup <- province %>%
+  filter(year == 2022 & age_ranges %in% c("15-29", "30-44", "45-59", "60+")) %>%
+  group_by(age_ranges) %>%
+  dplyr::summarize(total_population = sum(frequency, na.rm = TRUE)) %>%
+  mutate(overall_weight = total_population / sum(total_population))
+
+# Calculate the weighted average of ls in each age range in each year and province
+province_age_group_data <- province %>%
+  mutate(year = if_else(year==201718, 2018, year)) %>%
+  filter(year %in% years_to_plot & age_ranges %in% c("15-29", "30-44", "45-59", "60+")) %>%
+  group_by(province, year, age_ranges) %>%
+  dplyr::summarize(weighted_avg_ls_age_group = weighted.mean(ls, w = frequency, na.rm = TRUE)) %>%
+  drop_na(age_ranges)
+
+# Calculate the age-standardized average of ls for each province and year
+province_map_data <- province_age_group_data %>%
+  left_join(overall_age_makeup, by = "age_ranges") %>%
+  group_by(province, year) %>%
+  dplyr::summarize(weighted_avg_ls = weighted.mean(weighted_avg_ls_age_group, w = overall_weight, na.rm = TRUE)) 
+
+# Handle the special case for territories in 2009
+territories_2009 <- province_map_data %>%
+  filter(year == 2009 & province == "Yukon/Northwest Territories/Nunavut") %>%
+  mutate(province = list(c("Yukon", "Northwest Territories", "Nunavut"))) %>%
+  unnest(province)
+
+# Handle the special case for territories in 2022
+territories_2022 <- tibble(
+  province = c("Yukon", "Northwest Territories", "Nunavut"),
+  year = 2022,
+  weighted_avg_ls = NA_real_
+)
+
+# Combine the modified data
+province_map_data <- province_map_data %>%
+  filter(!(year == 2009 & province == "Yukon/Northwest Territories/Nunavut")) %>%
+  bind_rows(territories_2009, territories_2022)
+
+# Merge the weighted averages with the provincial boundary data
+PROV <- PROV %>%
+  left_join(province_map_data, by = c("PRENAME" = "province"))
+
+# Plot the maps with each province colored by the weighted average of 'ls' for the specified years
+ggplot(data = PROV) +
+  theme_minimal() + 
+  geom_sf(aes(fill = weighted_avg_ls), color = "black") +
+  scale_fill_gradientn(colors = wellbeing_scale_colours, na.value = "grey50", limits = c(7.8, 8.2)) +
+  labs(title = "Age-Standardized Average Life Satisfaction by Province",
+      fill = "Average Life Satisfaction",
+      caption = "Data Source: Canadian Community Health Survey") +
+  coord_sf(crs = st_crs(3347)) +  # Using the Lambert Conformal Conic projection
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        plot.margin = unit(c(0.1, 0.1, 0.1, 0.1), "cm"),
+        strip.text = element_text(size = 14),
+        plot.caption = element_text(hjust = 0, size = 8, face = "italic")) + 
+  facet_wrap(~ year, ncol = 1)
+# Export the map to different formats
+map_plot <- last_plot()
+ggsave("Output/Final Plots/Appendix/PNG/age_standardized_province_map.png", plot = map_plot, width = 10, height = 15, dpi = 300)
+ggsave("Output/Final Plots/Appendix/JPG/age_standardized_province_map.jpg", plot = map_plot, width = 10, height = 15, dpi = 300)
+ggsave("Output/Final Plots/Appendix/SVG/age_standardized_province_map.svg", plot = map_plot, width = 10, height = 15, dpi = 300)

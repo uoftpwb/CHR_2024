@@ -1157,7 +1157,7 @@ for (yr in years) {
 
 ##### Function for Generating Stratified Tables #######\
 
-generate_stratified_tables <- function(data, file_path, stratify_by) {
+generate_stratified_tables <- function(data, file_path, stratify_by, final_stratification) {
   # Ensure the stratify_by variable exists in the dataframe
   if (!stratify_by %in% names(data)) {
     stop("The stratify_by variable does not exist in the dataframe.")
@@ -1168,7 +1168,8 @@ generate_stratified_tables <- function(data, file_path, stratify_by) {
     drop_na(ls, !!sym(stratify_by)) %>%
     group_by(year, !!sym(stratify_by), ls) %>%
     summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
-    ungroup()
+    ungroup() %>%
+    rename(!!final_stratification := !!sym(stratify_by))
 
   # Get unique years
   years <- unique(stratified_data$year)
@@ -1185,12 +1186,12 @@ generate_stratified_tables <- function(data, file_path, stratify_by) {
       dir.create(file_path, recursive = TRUE)
     }
     
-    write.csv(subset_data, file = paste0(file_path, "/", toupper(stratify_by), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(final_stratification), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
   }
 }
 
 
-generate_age_stratified_tables <- function(data, file_path, stratify_by) {
+generate_age_stratified_tables <- function(data, file_path, stratify_by, final_stratification) {
   # Ensure the stratify_by variable exists in the dataframe
   if (!stratify_by %in% names(data)) {
     stop("The stratify_by variable does not exist in the dataframe.")
@@ -1201,7 +1202,8 @@ generate_age_stratified_tables <- function(data, file_path, stratify_by) {
     drop_na(ls, !!sym(stratify_by), age_ranges) %>%
     group_by(year, !!sym(stratify_by), age_ranges, ls) %>%
     summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
-    ungroup()
+    ungroup() %>%
+    rename(!!final_stratification := !!sym(stratify_by))
 
   # Get unique years
   years <- unique(stratified_data$year)
@@ -1217,26 +1219,24 @@ generate_age_stratified_tables <- function(data, file_path, stratify_by) {
       dir.create(file_path, recursive = TRUE)
     }
     
-    write.csv(subset_data, file = paste0(file_path, "/", toupper(stratify_by), "xAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(final_stratification), "xAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
   }
 }
 
 
 # Generate Stratified Tables (not by age)
-generate_stratified_tables(cchs, "Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada")
-generate_stratified_tables(cchs, "Output/MINORITYxLS Tables CCHS", "minority")
-generate_stratified_tables(cchs, "Output/MENTALHEALTHxLS Tables CCHS", "mental_health")
-generate_stratified_tables(cchs, "Output/LANGUAGExLS Tables CCHS", "language")
-generate_stratified_tables(cchs, "Output/SEXxLS Tables CCHS", "sex")
-generate_stratified_tables(cchs, "Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity")
-generate_stratified_tables(cchs %>% mutate(poverty = equiv_income <= 25252), "Output/POVERTYxLS Tables CCHS", "poverty")
-generate_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Output/HOMEOWNERxLS Tables CCHS", "home_owner")
-generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)), "Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday")
-generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)) %>% filter(age_ranges == "15-29"), "Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday")
-generate_stratified_tables(cchs, "Output/SCREENTIMEWExLS Tables CCHS", "screentime_weekend")
-generate_stratified_tables(cchs, "Output/SCREENTIMExLS Tables CCHS", "screentime_week")
-
-
+generate_stratified_tables(cchs, "Data/Tables/IMMIGRATIONxLS Tables CCHS", "time_in_canada", "immigration")
+generate_stratified_tables(cchs, "Data/Tables/MINORITYxLS Tables CCHS", "minority", "minority")
+generate_stratified_tables(cchs, "Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health", "mental_health")
+generate_stratified_tables(cchs, "Data/Tables/LANGUAGExLS Tables CCHS", "language", "language")
+generate_stratified_tables(cchs, "Data/Tables/SEXxLS Tables CCHS", "sex", "sex")
+generate_stratified_tables(cchs, "Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity", "sexual_orientation")
+generate_stratified_tables(cchs %>% mutate(poverty = equiv_income <= 25252), "Data/Tables/POVERTYxLS Tables CCHS", "poverty", "poverty")
+generate_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner", "home_owner")
+generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)), "Data/Tables/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday", "screentime_wd")
+generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)) %>% filter(age_ranges == "15-29"), "Data/Tables/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday", "screentime_wd")
+generate_stratified_tables(cchs, "Data/Tables/SCREENTIMEWExLS Tables CCHS", "screentime_weekend", "screentime_we")
+generate_stratified_tables(cchs, "Data/Tables/SCREENTIMExLS Tables CCHS", "screentime_week", "screentime_wd")
 
 
 # Generate Age-Stratified Tables
@@ -1324,3 +1324,160 @@ for (yr in years) {
   subset_data <- screentime_medians %>% filter(year == yr)
   write.csv(subset_data, file = paste0("Output/AGExSCREENTIMEWEEKDAY Tables CCHS/AGExSCREENTIMEWEEKDAY_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
+
+
+
+############################################################################################################
+######################################### RTRA Table Processing ############################################
+############################################################################################################
+
+# Import necessary libraries
+library(dplyr)
+library(purrr)
+library(readr)
+
+# Define the paths to the raw RTRA folders for different years
+raw_rtra_paths <- c(
+  "Data/Raw RTRA Folders from Nadia/CCHS201920_Frequencies",
+  "Data/Raw RTRA Folders from Nadia/CCHS2021_Frequencies",
+  "Data/Raw RTRA Folders from Nadia/CCHS2022_Frequencies"
+)
+
+# Define the seed strings based on the final part of the file name
+seed_strings <- c(
+  "HomeLS.csv" = "home_owner",
+  "IdentLS.csv" = "indigenous",
+  "ImmLS.csv" = "immigration",
+  "IncomLS.csv" = "poverty",
+  "LangLS.csv" = "language",
+  "MentLS.csv" = "mental_health",
+  "MinorLS.csv" = "minority",
+  "OrientLS.csv" = "sexual_orientation",
+  "SexLS.csv" = "sex",
+  "mental.csv" = "agexmentalhealth",
+  "mentalqc.csv" = "quebec-agexmentalhealth",
+  "mentalqcE.csv" = "english-quebec-agexmentalhealth",
+  "screen1.csv" = "screentime_wd",
+  "screen2.csv" = "screentime_we",
+  "Friends.csv" = "friends_sat"
+)
+
+# Function to assign seed strings to file names
+assign_seed_string <- function(file_paths, seed_strings) {
+  sapply(file_paths, function(file_path) {
+    final_part <- sub(".*CCHS[0-9]+", "", basename(file_path))
+    seed_string <- seed_strings[final_part]
+    return(seed_string)
+  })
+}
+
+# Loop through each raw RTRA path
+purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
+  # List all CSV files in the raw RTRA folders
+  rtra_files <- list.files(path = raw_rtra_path, pattern = "\\.csv$", full.names = TRUE)
+  
+  purrr::walk(rtra_files, function(file_path) {
+    final_part <- sub(".*CCHS[0-9]+", "", basename(file_path))
+    if (final_part %in% c("mental.csv", "mentalqc.csv", "mentalqcE.csv", "screen1.csv", "screen2.csv", "Friends.csv")) {
+      return(NULL)
+    }
+    
+    print(file_path)
+    # Read the CSV file and process it using dplyr
+    df <- read.csv(file_path) %>%
+      rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
+      mutate(year = as.numeric(paste0("20", sub(".*CCHS(\\d{2}).*", "\\1", file_path)))) %>%  # Extract the year from the filename and add it as a new column
+      filter(!is.na(as.numeric(.data$ls)) & as.numeric(.data$ls) <= 10)  # Use .data$ls to refer to the column
+
+    seed_string <- unname(seed_strings[final_part])
+    
+    # Rename the first column to the seed string and select necessary columns
+    df <- df %>%
+      rename(!!seed_string := 1) %>%
+      select(
+        !!seed_string, 
+        year, 
+        ls, 
+        frequency = `X_COUNT_`, 
+        lower_ci = `X_CILB_`, 
+        upper_ci = `X_CIUB_`, 
+        se = `X_SE_`
+      ) %>%
+      drop_na(!!seed_string) %>%
+      mutate(!!seed_string := {
+        col <- !!sym(seed_string)
+        if (all(col %in% c(0, 1), na.rm = TRUE)) {
+          col == 1
+        } else {
+          col
+        }
+      })  
+
+    # Create the output directory if it doesn't exist
+    seed_string_no_underscore <- gsub("_", "", seed_string)
+    output_dir <- paste0("Data/Tables/", toupper(seed_string_no_underscore), "xLS Tables CCHS")
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    
+    # Save the file
+    output_file <- paste0(output_dir, "/", toupper(seed_string_no_underscore), "xLS_", substr(df$year[1], 3, 4), "_CCHS.csv")
+    write.csv(df, file = output_file, row.names = FALSE)
+  })
+})
+
+
+
+
+
+
+
+# Function to rename columns
+rename_columns <- function(df) {
+  colnames(df) <- tolower(colnames(df))
+  colnames(df) <- gsub(" ", "_", colnames(df))
+  return(df)
+}
+
+# Import and rename columns for all CSV files
+rtra_data <- rtra_files %>%
+  map_dfr(~ read_csv(.x) %>% rename_columns())
+
+# Print the first few rows of the combined data to verify
+print(head(rtra_data))
+
+# Extract the final parts of the file paths
+extract_final_part <- function(file_paths) {
+  sapply(file_paths, function(x) {
+    parts <- strsplit(x, "/")[[1]]
+    sub(".*CCHS[0-9]+", "", parts[length(parts)])
+  })
+}
+
+# Extract final parts for each list
+final_parts_rtra_files <- extract_final_part(rtra_files)
+final_parts_rtra_files2 <- extract_final_part(rtra_files2)
+final_parts_rtra_files20 <- extract_final_part(rtra_files20)
+
+# Find matches across all three lists
+matches <- Reduce(intersect, list(final_parts_rtra_files, final_parts_rtra_files2, final_parts_rtra_files20))
+
+# Find unique elements in each list
+unique_rtra_files <- setdiff(final_parts_rtra_files, matches)
+unique_rtra_files2 <- setdiff(final_parts_rtra_files2, matches)
+unique_rtra_files20 <- setdiff(final_parts_rtra_files20, matches)
+
+# Print results
+cat("Matches across all three lists:\n")
+print(matches)
+
+cat("\nUnique in rtra_files:\n")
+print(unique_rtra_files)
+
+cat("\nUnique in rtra_files2:\n")
+print(unique_rtra_files2)
+
+cat("\nUnique in rtra_files20:\n")
+print(unique_rtra_files20)
+
+
