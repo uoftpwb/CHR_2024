@@ -432,6 +432,88 @@ ggsave("Output/Final Plots/SVG/province_map.svg", plot = map_plot, width = 10, h
 # Remove y axis labels
 
 
+######## DEMOGRAPHIC PLOTS #########
+
+
+demographic_distribution_plot <- function(file_path, condition, group1_label, group2_label, plot_title) {
+  # Import Data
+  data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
+    purrr::map_dfr(~ read.csv(.x) %>%
+      mutate(year = as.numeric(sub(".*_([0-9]+)_CCHS\\.csv$", "20\\1", .x))))
+  plot_data <- data %>%
+    mutate(display_year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year),
+                                    year == 201516 ~ 2016,
+                                    year == 201718 ~ 2018,
+                                    year == 201920 ~ 2020),
+           condition_met = ifelse(eval(parse(text = condition)), 1, 0)) %>%
+    group_by(year, condition_met) %>%
+    mutate(proportion = frequency / sum(frequency)) %>%
+    ungroup() %>%
+    # Calculate the weighted average life satisfaction for each year
+    group_by(year, condition_met) %>%
+    mutate(average_ls = sum(proportion * as.numeric(ls)))
+  min_y <- 0
+  max_y <- ceiling(max(plot_data$proportion*2, na.rm = TRUE) * 20) / 20
+  y_breaks <- seq(min_y, max_y, by = 0.2)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+  # Create the bar chart with a completely custom legend
+  demographic_plot <- ggplot() +
+      geom_rect(data = rect_data, 
+          aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+          fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+      geom_bar(data = plot_data %>% filter(year >= 201516 & condition_met), stat = "identity", width = 1, aes(x = as.factor(ls), y = proportion, fill = as.factor(ls)), alpha = 1, show.legend = NA) +
+      geom_bar(data = plot_data %>% filter(year >= 201516 & !condition_met), stat = "identity", width = 1, aes(x = as.factor(ls), y = proportion), fill = "#006ba2", alpha = 0.2, show.legend = NA) +
+      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 201516 & condition_met) %>% group_by(condition_met) %>% summarize(average_ls = first(average_ls))}[[2]]), color = "#d46171", linetype = "solid", linewidth = 0.5) +
+      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 201516 & !condition_met) %>% group_by(condition_met) %>% summarize(average_ls = first(average_ls))}[[2]]), color = "#006ba2", linetype = "solid", linewidth = 0.5) +
+      labs(title = plot_title,
+          x = "Life Satisfaction Score",
+          y = "Proportion") +
+      theme_chr() +
+      theme(aspect.ratio = 1, legend.position = "right") + 
+      scale_y_continuous(labels = scales::percent_format(scale = 50), expand = c(0, 0), limits = c(min_y, max_y)) +
+      scale_fill_manual(values = wellbeing_scale_colours, guide = FALSE) +
+      scale_color_identity(name = "Group", labels = c(group1_label, group2_label), 
+                           guide = 'legend', breaks = c("#d46171", "#006ba2")) +
+      geom_point(aes(x = 3, y = -5, color = "#d46171"), size = 10, shape = 15, show.legend = TRUE) +
+      geom_point(aes(x = 3, y = -5, color = "#006ba2"), size = 10, shape = 15, show.legend = TRUE)
+print(demographic_plot)
+
+# Save plot
+group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
+ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+
+return(plot_data)
+}
+
+
+demographic_distribution_plot("Output/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "Indigenous", "Non-indigenous", "Indigenous Life Satisfaction 2015-2018")
+
+demographic_distribution_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == '0-9 years'", "New Immigrants", "Other Canadians", "Life Satisfaction of New Immigrants in Canada 2015-2018")
+
+demographic_distribution_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == '10 or more years'", "In Canada 10 or more years", "Other Canadians", "Life Satisfaction of Established Immigrants in Canada 2015-2018")
+
+demographic_distribution_plot("Output/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada 2015-2018")
+
+mh <- demographic_distribution_plot("Output/MENTALHEALTHxLS Tables CCHS", "mental_health <= 0", "Poor Mental Health", "Other Canadians", "Life Satisfaction of Canadians with Poor Mental Health 2015-2018")
+
+demographic_distribution_plot("Output/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who speak French at Home 2015-2018")
+
+demographic_distribution_plot("Output/SEXxLS Tables CCHS", "sex == 'Female'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth 2015-2018")
+
+demographic_distribution_plot("Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity == 'Sexual minorities'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada 2015-2018")
+
+demographic_distribution_plot("Output/POVERTYxLS Tables CCHS", "poverty == TRUE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians 2015-2018")
+
+demographic_distribution_plot("Output/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "Non-Home Owners", "Home Owner", "Life Satisfaction of Non-Home Owning Canadians 2015-2018")
+
+demographic_distribution_plot("Output/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
+
+demographic_distribution_plot("Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
+
+demographic_distribution_plot("Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
 
 
 ###########################################################################################################
