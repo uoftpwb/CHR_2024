@@ -9,7 +9,7 @@ library(tidyr)
 library(ggplot2)
 library(RColorBrewer)
 library(stringr)
-library(hmisc)
+library(Hmisc)
 
 
 ######### DECLARE THEMES AND COLOURS #########
@@ -77,40 +77,50 @@ get_readable_label <- function(variable_name) {
   return(readable_label)
 }
 
-generate_trajectory_plot <- function(data, condition, true_label = " ", false_label = " ", single_line = FALSE, colour = 1, override_filename = FALSE, override_title = NULL, file_path = NULL) {
-  if (data == "from tables" && !is.null(file_path)) {
+generate_trajectory_plot <- function(data=NULL, condition, true_label = " ", false_label = " ", single_line = FALSE, colour = 1, override_filename = FALSE, override_title = NULL, from_tables=FALSE, file_path = NULL) {
+  data_source_caption <- ""
+  
+  if (from_tables && !is.null(file_path)) {
     data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
       purrr::map_dfr(~ read.csv(.x) %>%
-        mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x)))))
-    
-    plot_data <- data %>%
-      mutate(display_year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year),
+        mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) %>%
+      mutate(year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year)+0.5,
                                       year == 201516 ~ 2016,
                                       year == 201718 ~ 2018,
-                                      year == 201920 ~ 2020)) %>%
-      drop_na(age_ranges) %>%
-      mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
-      mutate(young = age_ranges == "15-29") %>%
-      group_by(display_year, young, binary_var) %>%
-      mutate(proportion = frequency / sum(frequency)) %>%
-      summarize(average_ls = sum(proportion * as.numeric(ls)), .groups = 'drop')
-  } else {
-    plot_data <- data %>%
-      mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
-      group_by(year, binary_var) %>%
-      dplyr::summarize(
-        average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
-        var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
-        n = sum(!is.na(ls)),
-        .groups = "drop"
-      ) %>%
-      mutate(
-        se_ls = sqrt(var_ls / n),
-        ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
-        ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
-      ) %>%
-      drop_na(binary_var)
+                                      year == 201920 ~ 2020),
+            ls = as.numeric(ls)) %>%
+      group_by(year) %>%
+      mutate(WGT = frequency / sum(frequency) * 65000) %>%
+      ungroup() %>%
+      drop_na(age_ranges)
+    data_source_caption <- "Data Source: Canadian Community Health Survey"
+  } 
+  
+  if (!is.null(data) && !from_tables) {
+    data_source_caption <- "Data Source: Gallup World Poll"
   }
+  
+  if (!is.null(data) && from_tables) {
+    data_source_caption <- "Data Source: Gallup World Poll, Canadian Community Health Survey"
+  }
+  
+  plot_data <- data %>%
+    mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
+    mutate(young = age_ranges == "15-29") %>%
+    group_by(year, binary_var) %>%
+    dplyr::summarize(
+      average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
+      var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
+      n = sum(WGT, na.rm=TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      se_ls = sqrt(var_ls / n),
+      ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
+      ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
+    ) %>%
+    drop_na(binary_var)
+
   
   # Automatically determine min_y and max_y based on the confidence intervals
   min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE)*2)/2
@@ -141,9 +151,10 @@ generate_trajectory_plot <- function(data, condition, true_label = " ", false_la
   age_group_ls_plot_gallup <- age_group_ls_plot_gallup +
     labs(title = plot_title,
          y = "Average Life Evaluation",
-         color = "Group") +
+         color = "Group",
+         caption = data_source_caption) +
     theme_chr() +
-    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm")) +  # Adjusted legend key width
+    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
     scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
     scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))-1, by = 1), ""), 
                         expand = c(0, 0)) +
@@ -158,6 +169,8 @@ generate_trajectory_plot <- function(data, condition, true_label = " ", false_la
   ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
   ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+
+  return(plot_data)
 }
 
 ######## LOAD GALLUP DATA #########
@@ -179,6 +192,177 @@ gallup <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
             age >= 60 & age < 100 ~ "60+",
             TRUE ~ NA_character_))
 
+######## LOAD CCHS DATA #########
+# Read all the PUMF CSV files and combine them into one dataframe
+PUMF_list <- list.files(path = "Output/PROVxAGExLS Tables CCHS", pattern = "*.csv", full.names = TRUE)
+provincePUMF <- PUMF_list %>%
+  purrr::map_dfr(~ read.csv(.x) %>%
+    mutate(year = as.numeric(paste0("20", sub("Output/PROVxAGExLS Tables CCHS/PROVxAGExLS_(.*)_CCHS.csv", "\\1", .x)))))
+
+# Read all the RTRA CSV files and combine them into one dataframe
+RTRA_list <- list.files(path = "Data/CCHS RTRA", pattern = "^PROVxAGExLS.*\\.csv$", full.names = TRUE)
+provinceRTRA <- RTRA_list %>%  # Start a chain of commands using the file_list vector
+  purrr::map_dfr(~read.csv(.x) %>%  # Read each file in the list into a dataframe and row-bind them together
+    rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
+    mutate(year = as.numeric( paste0("20", sub("Data/CCHS RTRA/PROVxAGExLS_(.*)_CCHS.csv", "\\1", .x))))) %>%  # Extract the year from the filename and add it as a new column
+  mutate(province = case_when(
+    GEO_PRV == 10 ~ "Newfoundland and Labrador",
+    GEO_PRV == 11 ~ "Prince Edward Island",
+    GEO_PRV == 12 ~ "Nova Scotia",
+    GEO_PRV == 13 ~ "New Brunswick",
+    GEO_PRV == 24 ~ "Quebec",
+    GEO_PRV == 35 ~ "Ontario",
+    GEO_PRV == 46 ~ "Manitoba",
+    GEO_PRV == 47 ~ "Saskatchewan",
+    GEO_PRV == 48 ~ "Alberta",
+    GEO_PRV == 59 ~ "British Columbia",
+    GEO_PRV == 60 ~ "Yukon",
+    GEO_PRV == 61 ~ "Northwest Territories",
+    GEO_PRV == 62 ~ "Nunavut",
+    is.na(GEO_PRV) ~ "Canada",
+    TRUE ~ NA_character_
+  )) %>%
+  filter(!is.na(ls) & ls <= 10) %>%  # Drop rows with NA in 'ls' or 'ls' values higher than 10
+  mutate(AGEGROUP = case_when(
+    AGEGROUP == ".toless15" ~ NA_character_,
+    AGEGROUP == "15toless3" ~ "15-29",
+    AGEGROUP == "30toless4" ~ "30-44",
+    AGEGROUP == "45toless6" ~ "45-60",
+    AGEGROUP == "60andup" ~ "60+",
+    TRUE ~ "All ages")) %>%
+  filter(AGEGROUP == "All ages") %>%
+  select(province, year, ls, age_ranges=AGEGROUP, frequency = X_COUNT_)
+
+# Combine PUMF and RTRA dataframes
+province <- rbind(provincePUMF, provinceRTRA)
+
+canada <- province %>%
+  filter(province == "Canada")
+
+            
 ######## GENERATE PLOTS #########
-gallup_trajectory_plot(gallup, TRUE, single_line=TRUE, colour=4, override_filename = "gallup_ls_trajectory_canada", override_title = "Average Evaluations of Life in Canada (Gallup)")
+
+
+#### GENERATE TRAJECTORY PLOTS #####
+# Generate the first plot using Gallup data
+data <- gallup
+override_filename <- "gallup_ls_trajectory_canada"
+override_title <- "Evaluations of Life in Canada"
+
+plot_data <- data %>%
+  mutate(young = age_ranges == "15-29") %>%
+  group_by(year) %>%
+  dplyr::summarize(
+    average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
+    var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm=TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_ls = sqrt(var_ls / n),
+    ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
+    ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
+  )
+
+min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE)*2)/2
+max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE)*2)/2
+y_breaks <- seq(min_y, max_y, by = 0.5)
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+gallup_trajectory_ls <- ggplot() +
+  geom_rect(data = rect_data, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = four_tone_scale_colours[colour], alpha = 0.2) +
+  geom_line(data = plot_data, aes(x = year, y = average_ls), color = six_tone_scale_colours[5]) +
+  geom_point(data = plot_data, aes(x = year, y = average_ls), color = six_tone_scale_colours[5]) +
+  labs(title = override_title,
+       y = "Average Life Evaluation",
+       color = "Group",
+       caption = "Data Source: Gallup World Poll") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +
+  scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+  scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))-1, by = 1), ""), 
+                    expand = c(0, 0))
+# Print the plot
+print(gallup_trajectory_ls)
+
+# Save the plot in different formats
+base_filename <- override_filename
+
+ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+
+# Generate the CCHS plot data
+file_path_cchs <- "Output/AGExLS Tables CCHS"
+
+data_cchs <- list.files(path = file_path_cchs, pattern = "*.csv", full.names = TRUE) %>%
+  purrr::map_dfr(~ read.csv(.x) %>%
+    mutate(year = as.numeric(paste0("20", sub(paste0(file_path_cchs, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) 
+    
+plot_data_cchs <- canada %>%
+  mutate(year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year)+0.5,
+                          year == 201516 ~ 2016,
+                          year == 201718 ~ 2018,
+                          year == 201920 ~ 2020),
+         ls = as.numeric(ls)) %>%
+  group_by(year) %>%
+  mutate(WGT = frequency / sum(frequency) * 65000) %>%
+  ungroup() %>%
+  drop_na(age_ranges) %>%
+  mutate(young = age_ranges == "15-29") %>%
+  group_by(year) %>%
+  dplyr::summarize(
+    average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
+    var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm=TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_ls = sqrt(var_ls / n),
+    ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
+    ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
+  )
+
+# Create Combined Plot
+combined_plot_data <- bind_rows(
+  plot_data_cchs %>% mutate(source = "Life Satisfaction - CCHS"),
+  plot_data %>% mutate(source = "Life Evaluation - Gallup")
+)
+
+min_y_combined <- floor(min(combined_plot_data$ci_lower, na.rm = TRUE) * 2) / 2
+max_y_combined <- ceiling(max(combined_plot_data$ci_upper, na.rm = TRUE) * 2) / 2
+y_breaks_combined <- seq(min_y_combined, max_y_combined, by = 0.5)
+rect_data_combined <- data.frame(ymin = head(y_breaks_combined, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks_combined, -1)[c(TRUE, FALSE)])
+
+combined_trajectory_ls <- ggplot() +
+  geom_rect(data = rect_data_combined, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_ribbon(data = combined_plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = source), alpha = 0.2) +
+  geom_line(data = combined_plot_data, aes(x = year, y = average_ls, color = source)) +
+  geom_point(data = combined_plot_data, aes(x = year, y = average_ls, color = source)) +
+  labs(title = "Life Evaluations and Satisfaction in Canada",
+       y = "Average Response",
+       color = "Question",
+       fill = "Question",
+       caption = "Data Source: Gallup World Poll and Canadian Community Health Survey") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +
+  scale_y_continuous(limits = c(min_y_combined, max_y_combined), breaks = y_breaks_combined) +
+  scale_x_continuous(limits = c(floor(min(combined_plot_data$year, na.rm = TRUE)), ceiling(max(combined_plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(combined_plot_data$year, na.rm = TRUE)), ceiling(max(combined_plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(combined_plot_data$year, na.rm = TRUE)), ceiling(max(combined_plot_data$year, na.rm = TRUE))-1, by = 1), ""), 
+                    expand = c(0, 0)) +
+  scale_color_manual(values = six_tone_scale_colours[c(5, 1)]) +
+  scale_fill_manual(values = six_tone_scale_colours[c(5, 1)])
+
+# Print the combined plot
+print(combined_trajectory_ls)
+
+base_filename <- "combined_trajectory_ls"
+ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+
 

@@ -957,6 +957,17 @@ for (yr in years) {
   write.csv(subset_data, file = paste0("Output/PROVxLS Tables CCHS/PROVxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
+canada <- province %>%
+filter(province == "Canada")
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- canada %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/CANADAxLS Tables CCHS/CANADAxLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+
 ######################### Mental Health x Age ####################
 mental_health <- cchs %>%
   drop_na(mental_health) %>%
@@ -1068,6 +1079,17 @@ for (yr in years) {
   subset_data <- provinceXage %>% filter(year == yr)
   write.csv(subset_data, file = paste0("Output/PROVxAGExLS Tables CCHS/PROVxAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
+
+canada <- provinceXage %>%
+filter(province == "Canada")
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- canada %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Output/AGExLS Tables CCHS/AGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
 
 
 ######################### Province X Generation Table Generation #############################
