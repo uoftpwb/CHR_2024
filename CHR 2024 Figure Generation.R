@@ -435,26 +435,25 @@ ggsave("Output/Final Plots/SVG/province_map.svg", plot = map_plot, width = 10, h
 ######## DEMOGRAPHIC PLOTS #########
 
 
-demographic_distribution_plot <- function(file_path, condition, group1_label, group2_label, plot_title) {
+demographic_distribution_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title) {
   # Import Data
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
       mutate(year = as.numeric(sub(".*_([0-9]+)_CCHS\\.csv$", "20\\1", .x))))
+  
   plot_data <- data %>%
-    mutate(display_year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year),
-                                    year == 201516 ~ 2016,
-                                    year == 201718 ~ 2018,
-                                    year == 201920 ~ 2020),
-           condition_met = ifelse(eval(parse(text = condition)), 1, 0)) %>%
+    mutate(condition_met = case_when(
+      eval(parse(text = condition1)) ~ 1,
+      eval(parse(text = condition2)) ~ 0,
+      TRUE ~ NA_real_
+    )) %>%
     group_by(year, condition_met) %>%
-    mutate(proportion = frequency / sum(frequency)) %>%
-    ungroup() %>%
-    # Calculate the weighted average life satisfaction for each year
-    group_by(year, condition_met) %>%
-    mutate(average_ls = sum(proportion * as.numeric(ls)))
+    mutate(proportion = frequency / sum(frequency, na.rm = TRUE)) %>%
+    mutate(average_ls = wtd.mean(as.numeric(ls), frequency, na.rm = TRUE))
+  
   min_y <- 0
-  max_y <- ceiling(max(plot_data$proportion*2, na.rm = TRUE) * 20) / 20
-  y_breaks <- seq(min_y, max_y, by = 0.2)
+  max_y <- ceiling(max(plot_data$proportion, na.rm = TRUE) * 20) / 20
+  y_breaks <- seq(min_y, max_y, by = 0.1)
   rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
 
   # Create the bar chart with a completely custom legend
@@ -462,36 +461,40 @@ demographic_distribution_plot <- function(file_path, condition, group1_label, gr
       geom_rect(data = rect_data, 
           aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
           fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-      geom_bar(data = plot_data %>% filter(year >= 201516 & condition_met), stat = "identity", width = 1, aes(x = as.factor(ls), y = proportion, fill = as.factor(ls)), alpha = 1, show.legend = NA) +
-      geom_bar(data = plot_data %>% filter(year >= 201516 & !condition_met), stat = "identity", width = 1, aes(x = as.factor(ls), y = proportion), fill = "#006ba2", alpha = 0.2, show.legend = NA) +
-      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 201516 & condition_met) %>% group_by(condition_met) %>% summarize(average_ls = first(average_ls))}[[2]]), color = "#d46171", linetype = "solid", linewidth = 0.5) +
-      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 201516 & !condition_met) %>% group_by(condition_met) %>% summarize(average_ls = first(average_ls))}[[2]]), color = "#006ba2", linetype = "solid", linewidth = 0.5) +
+      geom_bar(data = plot_data %>% filter(year >= 2022), 
+               stat = "identity", 
+               width = 0.95, 
+               aes(x = as.factor(ls), y = proportion, fill = as.factor(condition_met)), 
+               position = position_dodge(width = 0.95), 
+               show.legend = NA) +
+      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2022 & condition_met == 1) %>% group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
+      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2022 & condition_met == 0) %>% group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), color = six_tone_scale_colours[3], linetype = "solid", linewidth = 0.5) +
       labs(title = plot_title,
           x = "Life Satisfaction Score",
           y = "Proportion") +
       theme_chr() +
       theme(aspect.ratio = 1, legend.position = "right") + 
-      scale_y_continuous(labels = scales::percent_format(scale = 50), expand = c(0, 0), limits = c(min_y, max_y)) +
-      scale_fill_manual(values = wellbeing_scale_colours, guide = FALSE) +
+      scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
+      scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[3]), guide = FALSE) +
       scale_color_identity(name = "Group", labels = c(group1_label, group2_label), 
-                           guide = 'legend', breaks = c("#d46171", "#006ba2")) +
-      geom_point(aes(x = 3, y = -5, color = "#d46171"), size = 10, shape = 15, show.legend = TRUE) +
-      geom_point(aes(x = 3, y = -5, color = "#006ba2"), size = 10, shape = 15, show.legend = TRUE)
-print(demographic_plot)
+                           guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[3])) +
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[1]), size = 10, shape = 15, show.legend = TRUE) +
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[3]), size = 10, shape = 15, show.legend = TRUE)
+  print(demographic_plot)
 
-# Save plot
-group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
-ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-ggsave(paste0("Output/Plots/Demographics/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+  # Save plot
+  group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
+  ggsave(paste0("Output/Final Plots/PNG/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/JPG/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/SVG/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
 
-return(plot_data)
+  return(plot_data)
 }
 
 
-demographic_distribution_plot("Output/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "Indigenous", "Non-indigenous", "Indigenous Life Satisfaction 2015-2018")
+test <- demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "Indigenous", "Non-indigenous", "Indigenous Life Satisfaction 2015-2018")
 
-demographic_distribution_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == '0-9 years'", "New Immigrants", "Other Canadians", "Life Satisfaction of New Immigrants in Canada 2015-2018")
+test <- demographic_distribution_plot("Data/Tables/IMMIGRATIONxLS Tables CCHS", "immigration == '0-9 years'", "immigration == 'Canadian born'", "New Immigrants", "Born in Canada", "Life Satisfaction of New Immigrants in Canada 2015-2018")
 
 demographic_distribution_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == '10 or more years'", "In Canada 10 or more years", "Other Canadians", "Life Satisfaction of Established Immigrants in Canada 2015-2018")
 
@@ -514,6 +517,101 @@ demographic_distribution_plot("Output/SCREENTIMEWExLS Tables CCHS", "screentime_
 demographic_distribution_plot("Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
 
 demographic_distribution_plot("Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
+
+############# Immigration Plots ##################
+
+  file_path <- "Data/Tables/IMMIGRATIONxLS Tables CCHS"
+  plot_title <- "Life Satisfaction of Immigrants in Canada, 2021-2022"
+
+  data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
+    purrr::map_dfr(~ read.csv(.x) %>%
+      mutate(year = as.numeric(sub(".*_([0-9]+)_CCHS\\.csv$", "20\\1", .x))))
+  
+  plot_data <- data %>%
+    mutate(condition_met = case_when(
+      immigration == "0-9 years" ~ "0-9 years",
+      immigration == "10 or more years" ~ "10 or more years",
+      immigration == "Canadian born" ~ "Canadian born",
+      TRUE ~ NA_character_
+    )) %>%
+    group_by(year, condition_met) %>%
+    mutate(proportion = frequency / sum(frequency, na.rm = TRUE)) %>%
+    mutate(average_ls = wtd.mean(as.numeric(ls), frequency, na.rm = TRUE)) %>%
+    mutate(respondents = (frequency / 32535400) * 35000) %>%
+    group_by(year, condition_met) %>%
+    mutate(total_respondents = sum(respondents))
+  
+  min_y <- 0
+  max_y <- 0.35
+  y_breaks <- seq(min_y, max_y, by = 0.1)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+  # Create the bar chart with a completely custom legend
+  demographic_plot <- ggplot() +
+      geom_rect(data = rect_data, 
+          aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+          fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+      geom_bar(data = plot_data %>% filter(year >= 2021), 
+               stat = "identity", 
+               width = 0.95, 
+               aes(x = as.factor(ls), y = proportion, fill = as.factor(condition_met)), 
+               position = position_dodge(width = 0.95), 
+               show.legend = NA) +
+      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
+      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
+      #            color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
+      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
+      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
+      #            color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
+      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
+      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
+      #            color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
+geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
+               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+             color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
+geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
+               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+             color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
+geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
+               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+             color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
+      labs(title = plot_title,
+          x = "Life Satisfaction Score",
+          y = "Proportion",
+          group = "Time in Canada") +
+      theme_chr() +
+      theme(aspect.ratio = 1, legend.position = "right") + 
+      scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
+      scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5]), guide = FALSE) +
+      scale_color_identity(name = "Time in Canada", labels = c("0-9 years", "10 or more years", "Canadian born"), 
+                           guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5])) +
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[1]), size = 10, shape = 15, show.legend = TRUE) +
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[2]), size = 10, shape = 15, show.legend = TRUE) +
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE)
+  print(demographic_plot)
+
+  # Save plot
+  group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
+  ggsave(paste0("Output/Final Plots/PNG/immigration_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/JPG/immigration_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/SVG/immigration_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+
+  # Calculate the percentage of respondents in >= 2021 that fall into each of the three categories
+  percentage_data <- plot_data %>%
+    filter(year >= 2021) %>%
+    group_by(condition_met) %>%
+    dplyr::summarize(total_count = sum(frequency, na.rm = TRUE)) %>%
+    mutate(percentage = total_count / sum(total_count) * 100)
+  
+  # Print the percentage data
+  print(percentage_data)
+
+
+  return(plot_data)
+
 
 
 ###########################################################################################################

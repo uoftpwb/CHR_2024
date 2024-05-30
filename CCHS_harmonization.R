@@ -1169,7 +1169,8 @@ generate_stratified_tables <- function(data, file_path, stratify_by, final_strat
     group_by(year, !!sym(stratify_by), ls) %>%
     summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
     ungroup() %>%
-    rename(!!final_stratification := !!sym(stratify_by))
+    rename(!!final_stratification := !!sym(stratify_by)) %>%
+    mutate(year = as.numeric(substr(year, nchar(year) - 3, nchar(year))))
 
   # Get unique years
   years <- unique(stratified_data$year)
@@ -1179,14 +1180,14 @@ generate_stratified_tables <- function(data, file_path, stratify_by, final_strat
     filename_year <- gsub("/", "", yr) # Remove "/" from yr
     filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
     subset_data <- stratified_data %>% filter(year == yr)
+  
     
     # Create the folder if it doesn't exist
     
     if (!dir.exists(file_path)) {
       dir.create(file_path, recursive = TRUE)
     }
-    
-    write.csv(subset_data, file = paste0(file_path, "/", toupper(final_stratification), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(gsub("_", "", final_stratification)), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
   }
 }
 
@@ -1203,7 +1204,8 @@ generate_age_stratified_tables <- function(data, file_path, stratify_by, final_s
     group_by(year, !!sym(stratify_by), age_ranges, ls) %>%
     summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
     ungroup() %>%
-    rename(!!final_stratification := !!sym(stratify_by))
+    rename(!!final_stratification := !!sym(stratify_by)) %>%
+    mutate(year = as.numeric(substr(year, nchar(year) - 3, nchar(year))))
 
   # Get unique years
   years <- unique(stratified_data$year)
@@ -1219,7 +1221,7 @@ generate_age_stratified_tables <- function(data, file_path, stratify_by, final_s
       dir.create(file_path, recursive = TRUE)
     }
     
-    write.csv(subset_data, file = paste0(file_path, "/", toupper(final_stratification), "xAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(gsub("_", "", final_stratification)), "xAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
   }
 }
 
@@ -1236,22 +1238,24 @@ generate_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,
 generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)), "Data/Tables/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday", "screentime_wd")
 generate_stratified_tables(cchs %>% mutate(screentime_weekday = case_when(screentime_weekday == "Was not at work or school" ~ NA, TRUE ~ screentime_weekday)) %>% filter(age_ranges == "15-29"), "Data/Tables/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday", "screentime_wd")
 generate_stratified_tables(cchs, "Data/Tables/SCREENTIMEWExLS Tables CCHS", "screentime_weekend", "screentime_we")
-generate_stratified_tables(cchs, "Data/Tables/SCREENTIMExLS Tables CCHS", "screentime_week", "screentime_wd")
+generate_stratified_tables(cchs, "Data/Tables/SCREENTIMExLS Tables CCHS", "screentime_week", "screentime")
+generate_stratified_tables(cchs, "Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous", "indigenous")
+
+generate_age_stratified_tables(cchs, "Data/Tables/FRIENDSSATxLS Tables CCHS", "friends_sat", "friends_sat")
+generate_age_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Data/Tables/HOMEOWNERxAGExLS Tables CCHS", "home_owner", "home_owner")
+generate_age_stratified_tables(cchs , "Data/Tables/SCREENTIMExAGExLS Tables CCHS", "screentime_week", "screentime")
 
 
 # Generate Age-Stratified Tables
-generate_age_stratified_tables(cchs, "Output/JOBSATxLS Tables CCHS", "job_sat")
-generate_age_stratified_tables(cchs, "Output/LEISURESATxLS Tables CCHS", "leisure_sat")
-generate_age_stratified_tables(cchs, "Output/FINANCESATxLS Tables CCHS", "finance_sat")
-generate_age_stratified_tables(cchs, "Output/YOUSATxLS Tables CCHS", "you_sat")
-generate_age_stratified_tables(cchs, "Output/BODYSATxLS Tables CCHS", "body_sat")
-generate_age_stratified_tables(cchs, "Output/FAMILYSATxLS Tables CCHS", "family_sat")
-generate_age_stratified_tables(cchs, "Output/FRIENDSSATxLS Tables CCHS", "friends_sat")
-generate_age_stratified_tables(cchs, "Output/HOUSINGSATxLS Tables CCHS", "housing_sat")
-generate_age_stratified_tables(cchs, "Output/NEIGHBOURHOODSATxLS Tables CCHS", "neighbourhood_sat")
-generate_age_stratified_tables(cchs, "Output/PHQ9xLS Tables CCHS", "phq9")
-generate_age_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Output/HOMEOWNERxAGExLS Tables CCHS", "home_owner")
-generate_age_stratified_tables(cchs , "Output/SCREENTIMExAGExLS Tables CCHS", "screentime_week")
+# generate_age_stratified_tables(cchs, "Output/JOBSATxLS Tables CCHS", "job_sat")
+# generate_age_stratified_tables(cchs, "Output/LEISURESATxLS Tables CCHS", "leisure_sat")
+# generate_age_stratified_tables(cchs, "Output/FINANCESATxLS Tables CCHS", "finance_sat")
+# generate_age_stratified_tables(cchs, "Output/YOUSATxLS Tables CCHS", "you_sat")
+# generate_age_stratified_tables(cchs, "Output/BODYSATxLS Tables CCHS", "body_sat")
+# generate_age_stratified_tables(cchs, "Output/FAMILYSATxLS Tables CCHS", "family_sat")
+# generate_age_stratified_tables(cchs, "Output/HOUSINGSATxLS Tables CCHS", "housing_sat")
+# generate_age_stratified_tables(cchs, "Output/NEIGHBOURHOODSATxLS Tables CCHS", "neighbourhood_sat")
+# generate_age_stratified_tables(cchs, "Output/PHQ9xLS Tables CCHS", "phq9")
 
 ######################### Screentime x Age ####################
 screentime_medians <- cchs %>%
@@ -1371,6 +1375,80 @@ assign_seed_string <- function(file_paths, seed_strings) {
   })
 }
 
+mutate_based_on_seed_string <- function(data, seed_string, year) {
+  col <- sym(seed_string)
+  
+  if (seed_string == "indigenous" & year %in% c(2020,2021)) {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Yes",
+        !!col == 2 ~ "No",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "indigenous" & year %in% c(2022)) {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "No",
+        !!col == 2 ~ "Yes",
+        TRUE ~ NA_character_
+      ))
+  }else if (seed_string == "immigration") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col <= 9 ~ "0-9 years",
+        !!col > 9 & !!col < 996 ~ "10 or more years",
+        !!col == 996 ~ "Canadian born",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "language") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "English",
+        !!col == 2 ~ "French",
+        !!col == 3 ~ "English and French",
+        !!col == 4 ~ "Neither English nor French",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "mental_health") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col <= 5 ~ 5 - !!col,
+        TRUE ~ NA_integer_
+      ))
+  } else if (seed_string == "minority") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "White",
+        !!col == 2 ~ "Non-white",
+        !!col == 6 ~ "Non-white",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "sexual_orientation") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Heterosexual",
+        !!col == 2 ~ "Sexual minorities",
+        !!col == 3 ~ "Sexual minorities",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "sex") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Male",
+        !!col == 2 ~ "Female",
+        TRUE ~ NA_character_
+      ))
+  } else if (all(data[[col]] %in% c(0, 1))) {
+      data <- data %>%
+        mutate(!!col := as.logical(!!col))
+  } 
+
+  
+  return(data)
+}
+
+
+
 # Loop through each raw RTRA path
 purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
   # List all CSV files in the raw RTRA folders
@@ -1386,7 +1464,7 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
     # Read the CSV file and process it using dplyr
     df <- read.csv(file_path) %>%
       rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
-      mutate(year = as.numeric(paste0("20", sub(".*CCHS(\\d{2}).*", "\\1", file_path)))) %>%  # Extract the year from the filename and add it as a new column
+      mutate(year = as.numeric(paste0("20", sub(".*(\\d{2})\\D*$", "\\1", file_path)))) %>%
       filter(!is.na(as.numeric(.data$ls)) & as.numeric(.data$ls) <= 10)  # Use .data$ls to refer to the column
 
     seed_string <- unname(seed_strings[final_part])
@@ -1403,15 +1481,19 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
         upper_ci = `X_CIUB_`, 
         se = `X_SE_`
       ) %>%
+      drop_na(!!seed_string) 
+
+    df <- mutate_based_on_seed_string(df, seed_string, df$year[1]) %>%
       drop_na(!!seed_string) %>%
-      mutate(!!seed_string := {
-        col <- !!sym(seed_string)
-        if (all(col %in% c(0, 1), na.rm = TRUE)) {
-          col == 1
-        } else {
-          col
-        }
-      })  
+      group_by(!!sym(seed_string), ls) %>%
+    summarise(
+      frequency = sum(frequency, na.rm = TRUE),
+      se = sqrt(sum(se^2, na.rm = TRUE)),  # Calculate the standard error for the sum
+      lower_ci = frequency - 1.96 * se,  # Calculate the new lower confidence interval
+      upper_ci = frequency + 1.96 * se,   # Calculate the new upper confidence interval
+      year = first(year)
+    ) %>%
+    ungroup()
 
     # Create the output directory if it doesn't exist
     seed_string_no_underscore <- gsub("_", "", seed_string)
@@ -1426,58 +1508,4 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
   })
 })
 
-
-
-
-
-
-
-# Function to rename columns
-rename_columns <- function(df) {
-  colnames(df) <- tolower(colnames(df))
-  colnames(df) <- gsub(" ", "_", colnames(df))
-  return(df)
-}
-
-# Import and rename columns for all CSV files
-rtra_data <- rtra_files %>%
-  map_dfr(~ read_csv(.x) %>% rename_columns())
-
-# Print the first few rows of the combined data to verify
-print(head(rtra_data))
-
-# Extract the final parts of the file paths
-extract_final_part <- function(file_paths) {
-  sapply(file_paths, function(x) {
-    parts <- strsplit(x, "/")[[1]]
-    sub(".*CCHS[0-9]+", "", parts[length(parts)])
-  })
-}
-
-# Extract final parts for each list
-final_parts_rtra_files <- extract_final_part(rtra_files)
-final_parts_rtra_files2 <- extract_final_part(rtra_files2)
-final_parts_rtra_files20 <- extract_final_part(rtra_files20)
-
-# Find matches across all three lists
-matches <- Reduce(intersect, list(final_parts_rtra_files, final_parts_rtra_files2, final_parts_rtra_files20))
-
-# Find unique elements in each list
-unique_rtra_files <- setdiff(final_parts_rtra_files, matches)
-unique_rtra_files2 <- setdiff(final_parts_rtra_files2, matches)
-unique_rtra_files20 <- setdiff(final_parts_rtra_files20, matches)
-
-# Print results
-cat("Matches across all three lists:\n")
-print(matches)
-
-cat("\nUnique in rtra_files:\n")
-print(unique_rtra_files)
-
-cat("\nUnique in rtra_files2:\n")
-print(unique_rtra_files2)
-
-cat("\nUnique in rtra_files20:\n")
-print(unique_rtra_files20)
-
-
+if (final_part %in% c("mental.csv", "mentalqc.csv", "mentalqcE.csv", "screen1.csv", "screen2.csv", "Friends.csv")
