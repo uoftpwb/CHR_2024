@@ -198,10 +198,10 @@ gallup <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
 
 ######## LOAD CCHS DATA #########
 # Read all the PUMF CSV files and combine them into one dataframe
-PUMF_list <- list.files(path = "Output/PROVxAGExLS Tables CCHS", pattern = "*.csv", full.names = TRUE)
+PUMF_list <- list.files(path = "Data/Tables/PROVxAGExLS Tables CCHS", pattern = "*.csv", full.names = TRUE)
 provincePUMF <- PUMF_list %>%
   purrr::map_dfr(~ read.csv(.x) %>%
-    mutate(year = as.numeric(paste0("20", sub("Output/PROVxAGExLS Tables CCHS/PROVxAGExLS_(.*)_CCHS.csv", "\\1", .x)))))
+    mutate(year = as.numeric(paste0("20", sub("Data/Tables/PROVxAGExLS Tables CCHS/PROVxAGExLS_(.*)_CCHS.csv", "\\1", .x)))))
 
 # Read all the RTRA CSV files and combine them into one dataframe
 RTRA_list <- list.files(path = "Data/CCHS RTRA", pattern = "^PROVxAGExLS.*\\.csv$", full.names = TRUE)
@@ -293,9 +293,9 @@ print(gallup_trajectory_ls)
 # Save the plot in different formats
 base_filename <- gallup_filename
 
-ggsave(paste0("Output/Final Plots2/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 900, bg = "transparent")
-ggsave(paste0("Output/Final Plots2/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 8, height = 3, dpi = 300)
-ggsave(paste0("Output/Final Plots2/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 900, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 8, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 300, bg = "transparent")
 
 # Generate the CCHS plot data
 plot_data_cchs <- canada %>%
@@ -426,9 +426,9 @@ print(gallup_trajectory_ls)
 # Save the plot in different formats
 base_filename <- gallup_filename
 
-ggsave(paste0("Output/Final Plots2/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 900, bg = "transparent")
-ggsave(paste0("Output/Final Plots2/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 8, height = 3, dpi = 300)
-ggsave(paste0("Output/Final Plots2/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 900, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = gallup_trajectory_ls, width = 8, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = gallup_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 3, dpi = 300, bg = "transparent")
 
 # Generate the CCHS plot data
 plot_data_cchs <- canada %>%
@@ -505,12 +505,10 @@ combined_trajectory_ls <- ggplot() +
 # Print the combined plot
 print(combined_trajectory_ls)
 
-base_filename <- "combined_trajectory_ls"
+base_filename <- "combined_ls_age_trajectory"
 ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
 ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-
-
 
 
 ###### AGE-STANDARDIZED PROVINCIAL MAP #######
@@ -591,12 +589,12 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
       mutate(year = as.numeric(sub(".*_([0-9]+)_CCHS\\.csv$", "20\\1", .x))))
   
   plot_data <- data %>%
-    mutate(condition_met = case_when(
-      eval(parse(text = condition1)) ~ 1,
-      eval(parse(text = condition2)) ~ 0,
-      TRUE ~ NA_real_
+    mutate(group = case_when(
+      eval(parse(text = condition1)) ~ group1_label,
+      eval(parse(text = condition2)) ~ group2_label,
+      TRUE ~ NA_character_
     )) %>%
-    group_by(year, condition_met) %>%
+    group_by(year, group) %>%
     mutate(proportion = frequency / sum(frequency, na.rm = TRUE)) %>%
     mutate(average_ls = wtd.mean(as.numeric(ls), frequency, na.rm = TRUE))
   
@@ -613,22 +611,30 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
       geom_bar(data = plot_data %>% filter(year >= 2022), 
                stat = "identity", 
                width = 0.95, 
-               aes(x = as.factor(ls), y = proportion, fill = as.factor(condition_met)), 
+               aes(x = as.factor(ls), y = proportion, fill = group), 
                position = position_dodge(width = 0.95), 
                show.legend = NA) +
-      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2022 & condition_met == 1) %>% group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
-      geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2022 & condition_met == 0) %>% group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), color = six_tone_scale_colours[3], linetype = "solid", linewidth = 0.5) +
+      geom_segment(data = plot_data %>% filter(year >= 2022 & group == group1_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
+                   aes(x = average_ls, xend = average_ls, y = 0, yend = max_y * 0.95),
+                   color = colorspace::darken(six_tone_scale_colours[1], amount = 0.3), 
+                   linetype = "solid", 
+                   linewidth = 0.5) +
+      geom_segment(data = plot_data %>% filter(year >= 2022 & group == group2_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
+                   aes(x = average_ls, xend = average_ls, y = 0, yend = max_y * 0.95),
+                   color = colorspace::darken(six_tone_scale_colours[5], amount = 0.3), 
+                   linetype = "solid", 
+                   linewidth = 0.5) +
       labs(title = plot_title,
           x = "Life Satisfaction Score",
           y = "Proportion") +
       theme_chr() +
-      theme(aspect.ratio = 1, legend.position = "right") + 
+      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 10))) + 
       scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
-      scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[3]), guide = FALSE) +
+      scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[5]), guide = FALSE) +
       scale_color_identity(name = "Group", labels = c(group1_label, group2_label), 
-                           guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[3])) +
+                           guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[5])) +
       geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[1]), size = 10, shape = 15, show.legend = TRUE) +
-      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[3]), size = 10, shape = 15, show.legend = TRUE)
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE)
   print(demographic_plot)
 
   # Save plot
@@ -641,7 +647,7 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
 }
 
 
-test <- demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "Indigenous", "Non-indigenous", "Indigenous Life Satisfaction 2015-2018")
+test <- demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "First Nation, Metis and Inuit", "Other Canadians", "First Nation, Metis and Inuit Life Satisfaction in 2022")
 
 test <- demographic_distribution_plot("Data/Tables/IMMIGRATIONxLS Tables CCHS", "immigration == '0-9 years'", "immigration == 'Canadian born'", "New Immigrants", "Born in Canada", "Life Satisfaction of New Immigrants in Canada 2015-2018")
 
@@ -681,23 +687,24 @@ demographic_trajectory_plot(
 
 ###### Demographic Trajectory Plots ######
 
-demographic_trajectory_plot <- function(condition, true_label = " ", false_label = " ", colour = 1, override_filename = FALSE, override_title = NULL, file_path) {
+
+demographic_trajectory_plot <- function(file_path, condition1, condition2, group1_label, group2_label, colour = 1, override_filename = FALSE, override_title = NULL) {
   data_source_caption <- "Data Source: Canadian Community Health Survey"
   
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
       mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) %>%
     mutate(year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year) + 0.5,
-                            year == 201516 ~ 2016,
-                            year == 201718 ~ 2018,
-                            year == 201920 ~ 2020),
+                            year == 2016 ~ 2016,
+                            year == 2018 ~ 2018,
+                            year == 2020 ~ 2020),
            ls = as.numeric(ls)) %>%
     group_by(year) %>%
     mutate(WGT = frequency / sum(frequency) * 65000) %>%
     ungroup()
   
   plot_data <- data %>%
-    mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
+    mutate(binary_var = if_else(eval(parse(text = condition1)), group1_label, if_else(eval(parse(text = condition2)), group2_label, NA_character_))) %>%
     group_by(year, binary_var) %>%
     dplyr::summarize(
       average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
@@ -719,34 +726,40 @@ demographic_trajectory_plot <- function(condition, true_label = " ", false_label
   rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
   
   # Create the plot
+  plot_title <- if (!is.null(override_title)) override_title else paste("Life Satisfaction for", tools::toTitleCase(group1_label))
+
   age_group_ls_plot <- ggplot() +
     geom_rect(data = rect_data, 
               aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
               fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-    geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
-    geom_line(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
-    geom_point(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var))
-  
-  plot_title <- if (!is.null(override_title)) override_title else paste("Life Satisfaction for", tools::toTitleCase(true_label))
-  
-  age_group_ls_plot <- age_group_ls_plot +
+    geom_vline(xintercept = c(2015, 2022), linetype = "dashed", color = six_tone_scale_colours[1]) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
+    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+              aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
+    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+              aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
+    geom_point(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
     labs(title = plot_title,
          y = "Average Life Evaluation",
          color = "Group",
+         fill = "Group",
          caption = data_source_caption) +
     theme_chr() +
     theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
     scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
     scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)) - 1, by = 1), ""), 
                         expand = c(0, 0)) +
-    scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(true_label, false_label)))
-  
+    scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[5]), c(group1_label, group2_label))) +
+    scale_fill_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[5]), c(group1_label, group2_label)))
   # Print the plot
   print(age_group_ls_plot)
   
   # Save the plot in different formats
-  true_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", true_label)))
-  base_filename <- if (is.character(override_filename)) override_filename else paste0("trajectory_by_", true_label_formatted, "_Canada")
+  group1_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", group1_label)))
+  base_filename <- if (is.character(override_filename)) override_filename else paste0("trajectory_by_", group1_label_formatted, "_Canada")
   
   ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = age_group_ls_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = age_group_ls_plot, width = 9, height = 3, dpi = 300)
@@ -801,33 +814,24 @@ demographic_trajectory_plot <- function(condition, true_label = " ", false_label
                aes(x = as.factor(ls), y = proportion, fill = as.factor(condition_met)), 
                position = position_dodge(width = 0.95), 
                show.legend = NA) +
-      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
-      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
-      #            color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
-      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
-      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
-      #            color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
-      # geom_vline(aes(xintercept = {plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
-      #                             group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls))}[[2]]), 
-      #            color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
-geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
-               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
-             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-             color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
-geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
-               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
-             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-             color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
-geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
-               group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
-             aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-             color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
+      geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
+                   group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+                   aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+                   color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
+      geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
+                   group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+                   aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+                   color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
+      geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
+                   group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
+                   aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
+                   color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
       labs(title = plot_title,
           x = "Life Satisfaction Score",
           y = "Proportion",
           group = "Time in Canada") +
       theme_chr() +
-      theme(aspect.ratio = 1, legend.position = "right") + 
+      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 10))) + 
       scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
       scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5]), guide = FALSE) +
       scale_color_identity(name = "Time in Canada", labels = c("0-9 years", "10 or more years", "Canadian born"), 
