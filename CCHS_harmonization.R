@@ -1022,9 +1022,24 @@ for (yr in years) {
 
 mental_health_en_qc <- cchs %>%
   drop_na(mental_health) %>%
-  filter(language %in% c("English", "English and French"), province == "Quebec") %>%
-  group_by(year, mental_health, age_ranges) %>%
-  summarise(frequency = sum(weight, na.rm = TRUE))
+  mutate(
+    quebec = if_else(province == "Quebec", 1, if_else(is.na(province), NA_real_, 0)),
+    anglophone = case_when(
+      language %in% c("English", "English and French") ~ 1,
+      is.na(language) ~ NA_real_,
+      TRUE ~ 0
+    )) %>%
+    group_by(year) %>%
+    mutate(sample_size = sum(weight, na.rm = TRUE)) %>%
+  group_by(year, mental_health, age_ranges, quebec, anglophone) %>%
+  summarise(
+    frequency = sum(weight, na.rm = TRUE),
+    sample_size = first(sample_size)) %>%
+  mutate(
+    p = frequency / sample_size,
+    se = sample_size * sqrt((p * (1 - p)) / sample_size)
+  ) %>%
+  select(-sample_size, -p)
 
 years <- unique(mental_health_en_qc$year)
   
@@ -1032,7 +1047,7 @@ for (yr in years) {
   filename_year <- gsub("/", "", yr) # Remove "/" from yr
   filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
   subset_data <- mental_health_en_qc %>% filter(year == yr)
-  write.csv(subset_data, file = paste0("Output/ENGLISH-QUEBEC-AGExMENTALHEALTH Tables CCHS/ENGLISH-QUEBEC-AGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+  write.csv(subset_data, file = paste0("Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS/ENGLISHxQUEBECxAGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
 }
 
 ###################### Mental Health x Age for English Speaking CAnadians ################
@@ -1456,7 +1471,54 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
   
   purrr::walk(rtra_files, function(file_path) {
     final_part <- sub(".*CCHS[0-9]+", "", basename(file_path))
-    if (final_part %in% c("mental.csv", "mentalqc.csv", "mentalqcE.csv", "screen1.csv", "screen2.csv", "Friends.csv")) {
+    if (final_part %in% c("mental.csv", "mentalqc.csv", "screen1.csv", "screen2.csv", "Friends.csv")) {
+      return(NULL)
+    } else if (final_part == "mentalqcE.csv") {
+      df <- read.csv(file_path) %>%
+        mutate(year = as.numeric(paste0("20", sub(".*(\\d{2})\\D*$", "\\1", file_path)))) %>%
+        filter_all(all_vars(. != "")) %>%
+        rename(
+          mental_health = any_of(c("GEN_015", "GEN_05")),
+          quebec = "QUEBEC",
+          anglophone = "ANGLOPHONE",
+          age_ranges = "AGEGROUP"
+        ) %>%
+        mutate(age_ranges = case_when(
+          age_ranges == ".toless15" ~ "0-14",
+          age_ranges == "15toless3" ~ "15-29",
+          age_ranges == "30toless4" ~ "30-44",
+          age_ranges == "45toless6" ~ "45-59",
+          age_ranges == "60andup" ~ "60+",
+          TRUE ~ NA_character_
+        )) %>%
+        select(
+          mental_health, 
+          quebec, 
+          anglophone, 
+          age_ranges, 
+          year, 
+          frequency = `X_COUNT_`
+        ) %>%
+        drop_na(mental_health)
+      
+      df <- mutate_based_on_seed_string(df, "mental_health", df$year[1]) %>%
+        drop_na(mental_health) %>%
+        group_by(year, mental_health, age_ranges, quebec, anglophone) %>%
+        summarise(
+          frequency = sum(frequency, na.rm = TRUE)
+        ) %>%
+        ungroup()
+      
+      # Create the output directory if it doesn't exist
+      output_dir <- "Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS"
+      if (!dir.exists(output_dir)) {
+        dir.create(output_dir, recursive = TRUE)
+      }
+      
+      # Save the file
+      output_file <- paste0(output_dir, "/ENGLISHxQUEBECxAGExMENTALHEALTH_", substr(df$year[1], 3, 4), "_CCHS.csv")
+      write.csv(df, file = output_file, row.names = FALSE)
+      
       return(NULL)
     }
     

@@ -921,7 +921,7 @@ generate_combined_plot(
 ############# Immigration Plots ##################
 
   file_path <- "Data/Tables/IMMIGRATIONxLS Tables CCHS"
-  plot_title <- "Life Satisfaction of Immigrants in Canada, 2021-2022"
+  plot_title <- "Distribution and Trend of Life Satisfaction by Time in Canada"
 
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
@@ -981,7 +981,10 @@ generate_combined_plot(
                            guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5])) +
       geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[1]), size = 10, shape = 15, show.legend = TRUE) +
       geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[2]), size = 10, shape = 15, show.legend = TRUE) +
-      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE)
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE) + 
+      geom_text(aes(x = Inf, y = 0.32, label = "2022"), 
+          hjust = 1.5, size = 5, 
+          inherit.aes = FALSE, show.legend = FALSE)
   print(demographic_plot)
 
   # Save plot
@@ -998,6 +1001,103 @@ generate_combined_plot(
   
   # Print the percentage data
   print(percentage_data)
+
+########### TREND PLOT FOR IMMIGRATION ###############
+
+data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
+  purrr::map_dfr(~ read.csv(.x) %>%
+    mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) %>%
+  mutate(year = case_when(year %in% c(2016, 2018, 2020) ~ as.numeric(year),
+                          as.numeric(year) <= 2023 ~ as.numeric(year) + 0.5),
+          ls = as.numeric(ls)) %>%
+  group_by(year) %>%
+  mutate(WGT = frequency / sum(frequency) * 65000) %>%
+  ungroup()
+
+plot_data <- data %>%
+    mutate(condition_met = case_when(
+      immigration == "0-9 years" ~ "0-9 years",
+      immigration == "10 or more years" ~ "10 or more years",
+      immigration == "Canadian born" ~ "Canadian born",
+      TRUE ~ NA_character_
+    )) %>%
+  group_by(year, condition_met) %>%
+  dplyr::summarize(
+    average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
+    var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_ls = sqrt(var_ls / n),
+    ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
+    ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
+  ) %>%
+  drop_na(condition_met)
+
+# Automatically determine min_y and max_y based on the confidence intervals
+min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
+max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
+y_breaks <- seq(min_y, max_y, by = 0.5)
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+# Create the plot
+trajectory_plot <- ggplot() +
+  geom_rect(data = rect_data, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+  geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+  geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "0-9 years"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "0-9 years"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "10 or more years"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "10 or more years"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "Canadian born"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & condition_met == "Canadian born"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "0-9 years"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "0-9 years"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "10 or more years"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "10 or more years"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "Canadian born"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = condition_met), alpha = 0.2, show.legend = show_legend) +
+  geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & condition_met == "Canadian born"), 
+            aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  geom_point(data = plot_data, aes(x = year, y = average_ls, group = condition_met, color = condition_met), show.legend = show_legend) +
+  labs(title =  NULL,
+        y = "Average Life Satisfaction",
+        color = "Group",
+        fill = "Group",
+        caption = data_source_caption) +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
+  scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+  scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
+                      expand = c(0, 0)) +
+  scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5]), c("0-9 years", "10 or more years", "Canadian born"))) +
+  scale_fill_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5]), c("0-9 years", "10 or more years", "Canadian born")))
+# Print the plot
+print(trajectory_plot)
+
+# Combine the original and special immigration plots
+combined_immigration_plot <- free(demographic_plot) + trajectory_plot + plot_layout(ncol = 1, heights = c(0.88, 0.33))
+
+# Print the combined plot
+print(combined_immigration_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)))
+
+# Save the combined plot in different formats
+ggsave(paste0("Output/Final Plots/PNG/immigration_distribution_combined.png"), plot = combined_immigration_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/immigration_distribution_combined.jpg"), plot = combined_immigration_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)), width = 8, height = 9, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/immigration_distribution_combined.svg"), plot = combined_immigration_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
 
 
 
