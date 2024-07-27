@@ -4,13 +4,13 @@
 ###############################################
 
 ######### LOAD PACKAGES #########
-library(dplyr)
+
 library(tidyr)
 library(ggplot2)
 library(RColorBrewer)
 library(stringr)
 library(Hmisc)
-
+library(dplyr)
 
 ######### DECLARE THEMES AND COLOURS #########
 theme_chr <- function() {
@@ -582,44 +582,51 @@ ggsave("Output/Final Plots/SVG/province_map.svg", plot = map_plot, width = 10, h
 ######## DEMOGRAPHIC PLOTS #########
 
 
-demographic_distribution_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title) {
+demographic_distribution_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title, year_choice = 2022) {
   # Import Data
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
       mutate(year = as.numeric(sub(".*_([0-9]+)_CCHS\\.csv$", "20\\1", .x))))
   
   plot_data <- data %>%
+    filter(year == year_choice) %>%
     mutate(group = case_when(
       eval(parse(text = condition1)) ~ group1_label,
       eval(parse(text = condition2)) ~ group2_label,
       TRUE ~ NA_character_
     )) %>%
+    drop_na(group) %>%
+    group_by(year, group, ls) %>%
+    summarise(frequency = sum(frequency, na.rm = TRUE)) %>%
     group_by(year, group) %>%
     mutate(proportion = frequency / sum(frequency, na.rm = TRUE)) %>%
     mutate(average_ls = wtd.mean(as.numeric(ls), frequency, na.rm = TRUE))
   
   min_y <- 0
-  max_y <- ceiling(max(plot_data$proportion, na.rm = TRUE) * 20) / 20
+  max_y <- 0.35
   y_breaks <- seq(min_y, max_y, by = 0.1)
   rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+  # Create a custom color mapping
+  color_map <- setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[5]), c(group1_label, group2_label))
 
   # Create the bar chart with a completely custom legend
   demographic_plot <- ggplot() +
       geom_rect(data = rect_data, 
           aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
           fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-      geom_bar(data = plot_data %>% filter(year >= 2022), 
+      geom_bar(data = plot_data, 
                stat = "identity", 
                width = 0.95, 
                aes(x = as.factor(ls), y = proportion, fill = group), 
                position = position_dodge(width = 0.95), 
                show.legend = NA) +
-      geom_segment(data = plot_data %>% filter(year >= 2022 & group == group1_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
+      geom_segment(data = plot_data %>% filter(group == group1_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
                    aes(x = average_ls, xend = average_ls, y = 0, yend = max_y * 0.95),
                    color = colorspace::darken(six_tone_scale_colours[1], amount = 0.3), 
                    linetype = "solid", 
                    linewidth = 0.5) +
-      geom_segment(data = plot_data %>% filter(year >= 2022 & group == group2_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
+      geom_segment(data = plot_data %>% filter(group == group2_label) %>% group_by(group) %>% dplyr::summarize(average_ls = first(average_ls)),
                    aes(x = average_ls, xend = average_ls, y = 0, yend = max_y * 0.95),
                    color = colorspace::darken(six_tone_scale_colours[5], amount = 0.3), 
                    linetype = "solid", 
@@ -628,13 +635,19 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
           x = "Life Satisfaction Score",
           y = "Proportion") +
       theme_chr() +
-      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 10))) + 
+      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 5)),
+            axis.text.x = element_text(hjust = 0.5),
+            axis.ticks.x = element_blank()) +  # Remove x-axis ticks
       scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
-      scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[5]), guide = FALSE) +
-      scale_color_identity(name = "Group", labels = c(group1_label, group2_label), 
+      #scale_x_discrete(breaks = unique(plot_data$ls), labels = unique(plot_data$ls)) +  # Explicitly set x-axis breaks and labels
+      scale_fill_manual(values = color_map, guide = 'none') +
+      scale_color_identity(name = "Group", labels = c(str_wrap(group1_label, width = 15), str_wrap(group2_label, width = 15)), 
                            guide = 'legend', breaks = c(six_tone_scale_colours[1], six_tone_scale_colours[5])) +
       geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[1]), size = 10, shape = 15, show.legend = TRUE) +
-      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE)
+      geom_point(aes(x = 3, y = -5, color = six_tone_scale_colours[5]), size = 10, shape = 15, show.legend = TRUE) +
+      geom_text(aes(x = Inf, y = 0.32, label = year_choice), 
+                hjust = 1.5, size = 5, 
+                inherit.aes = FALSE, show.legend = FALSE)
   print(demographic_plot)
 
   # Save plot
@@ -643,61 +656,55 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
   ggsave(paste0("Output/Final Plots/JPG/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Final Plots/SVG/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
 
-  return(plot_data)
+  return(demographic_plot)
 }
 
-
-test <- demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "First Nation, Metis and Inuit", "Other Canadians", "First Nation, Metis and Inuit Life Satisfaction in 2022")
-
-test <- demographic_distribution_plot("Data/Tables/IMMIGRATIONxLS Tables CCHS", "immigration == '0-9 years'", "immigration == 'Canadian born'", "New Immigrants", "Born in Canada", "Life Satisfaction of New Immigrants in Canada 2015-2018")
-
-demographic_distribution_plot("Output/IMMIGRATIONxLS Tables CCHS", "time_in_canada == '10 or more years'", "In Canada 10 or more years", "Other Canadians", "Life Satisfaction of Established Immigrants in Canada 2015-2018")
-
-demographic_distribution_plot("Output/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada 2015-2018")
-
-mh <- demographic_distribution_plot("Output/MENTALHEALTHxLS Tables CCHS", "mental_health <= 0", "Poor Mental Health", "Other Canadians", "Life Satisfaction of Canadians with Poor Mental Health 2015-2018")
-
-demographic_distribution_plot("Output/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who speak French at Home 2015-2018")
-
-demographic_distribution_plot("Output/SEXxLS Tables CCHS", "sex == 'Female'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth 2015-2018")
-
-demographic_distribution_plot("Output/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity == 'Sexual minorities'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada 2015-2018")
-
-demographic_distribution_plot("Output/POVERTYxLS Tables CCHS", "poverty == TRUE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians 2015-2018")
-
-demographic_distribution_plot("Output/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "Non-Home Owners", "Home Owner", "Life Satisfaction of Non-Home Owning Canadians 2015-2018")
-
-demographic_distribution_plot("Output/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
-
-demographic_distribution_plot("Output/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
-
-demographic_distribution_plot("Output/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
+file_path <- "Data/Tables/INDIGENOUSxLS Tables CCHS"
+condition1 <- "indigenous == 'Yes'"
+condition2 <- "indigenous == 'No'"
+group1_label <- "Indigenous"
+group2_label <- "Non-Indigenous"
+plot_title <- "Life Satisfaction of Canadians by Self-Perceived Mental Health in 2022"
 
 
-demographic_trajectory_plot(
-  condition = "home_owner == FALSE",
-  true_label = "Non-Home Owners",
-  false_label = "Home Owners",
-  colour = 1,
-  override_filename = FALSE,
-  override_title = "Life Satisfaction of Homeowners vs Non-Homeowners, 2020-2022",
-  file_path = "Data/Tables/HOMEOWNERxLS Tables CCHS"
-)
+demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "First Nation, Metis and Inuit", "Other Canadians", "First Nation, Metis and Inuit Life Satisfaction in 2022")
+
+# CHANGE year_choice VARIABLE IN THIS CALL IF UPDATED DATA IS RECEIVED:
+demographic_distribution_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada in 2017-2018", year_choice = 2018)
+
+demographic_distribution_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health in 2022")
+
+demographic_distribution_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English in 2022")
+
+demographic_distribution_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth in 2022")
+
+demographic_distribution_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada in 2022")
+
+demographic_distribution_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians in 2022")
+
+demographic_distribution_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada in 2022")
+
+demographic_distribution_plot("Data/Tables/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekend < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
+
+demographic_distribution_plot("Data/Tables/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
+
+demographic_distribution_plot("Data/Tables/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
+
+
 
 
 ###### Demographic Trajectory Plots ######
 
 
-demographic_trajectory_plot <- function(file_path, condition1, condition2, group1_label, group2_label, colour = 1, override_filename = FALSE, override_title = NULL) {
+
+demographic_trajectory_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title, override_filename = FALSE, include_title = TRUE, show_legend = TRUE) {
   data_source_caption <- "Data Source: Canadian Community Health Survey"
   
   data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
     purrr::map_dfr(~ read.csv(.x) %>%
       mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) %>%
-    mutate(year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year) + 0.5,
-                            year == 2016 ~ 2016,
-                            year == 2018 ~ 2018,
-                            year == 2020 ~ 2020),
+    mutate(year = case_when(year %in% c(2016, 2018, 2020) ~ as.numeric(year),
+                            as.numeric(year) <= 2023 ~ as.numeric(year) + 0.5),
            ls = as.numeric(ls)) %>%
     group_by(year) %>%
     mutate(WGT = frequency / sum(frequency) * 65000) %>%
@@ -726,50 +733,186 @@ demographic_trajectory_plot <- function(file_path, condition1, condition2, group
   rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
   
   # Create the plot
-  plot_title <- if (!is.null(override_title)) override_title else paste("Life Satisfaction for", tools::toTitleCase(group1_label))
-
-  age_group_ls_plot <- ggplot() +
+  trajectory_plot <- ggplot() +
     geom_rect(data = rect_data, 
               aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
               fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-    geom_vline(xintercept = c(2015, 2022), linetype = "dashed", color = six_tone_scale_colours[1]) +
+    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
     geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2, show.legend = show_legend) +
     geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
-              aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
+              aes(x = year, y = average_ls, group = binary_var, color = binary_var), show.legend = show_legend) +
     geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2, show.legend = show_legend) +
     geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
-              aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
-    geom_point(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
-    labs(title = plot_title,
-         y = "Average Life Evaluation",
+              aes(x = year, y = average_ls, group = binary_var, color = binary_var), show.legend = show_legend) +
+    geom_point(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var), show.legend = show_legend) +
+    labs(title = if (include_title) plot_title else NULL,
+         y = "Average Life Satisfaction",
          color = "Group",
          fill = "Group",
          caption = data_source_caption) +
     theme_chr() +
     theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
     scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)) - 1, by = 1), ""), 
+    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
                         expand = c(0, 0)) +
     scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[5]), c(group1_label, group2_label))) +
     scale_fill_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[5]), c(group1_label, group2_label)))
   # Print the plot
-  print(age_group_ls_plot)
+  print(trajectory_plot)
   
   # Save the plot in different formats
-  group1_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", group1_label)))
-  base_filename <- if (is.character(override_filename)) override_filename else paste0("trajectory_by_", group1_label_formatted, "_Canada")
+  group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
+  base_filename <- if (is.character(override_filename)) override_filename else paste0(group1_label_sanitized, "_trajectory")
   
-  ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = age_group_ls_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = age_group_ls_plot, width = 9, height = 3, dpi = 300)
-  ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = age_group_ls_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  
-  return(plot_data)
+  ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  return(trajectory_plot)
 }
 
+demographic_trajectory_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities over Time")
+
+demographic_trajectory_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health over Time")
+
+demographic_trajectory_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English over Time")
+
+demographic_trajectory_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth over Time")
+
+demographic_trajectory_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada over Time")
+
+demographic_trajectory_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians over Time")
+
+demographic_trajectory_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada over Time")
 
 
+generate_combined_plot <- function(file_path, group1_condition, group2_condition, group1_label, group2_label, distribution_plot_title, trajectory_plot_title, include_title = TRUE, show_legend = TRUE, override_filename = NULL, year_choice = 2022) {
+  # Ensure required packages are loaded
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Package 'ggplot2' is required but not installed.")
+  if (!requireNamespace("patchwork", quietly = TRUE)) stop("Package 'patchwork' is required but not installed.")
+  
+  # Generate the distribution plot
+  distribution_plot <- demographic_distribution_plot(file_path, group1_condition, group2_condition, group1_label, group2_label, distribution_plot_title, year_choice = year_choice) +
+    theme(plot.background = element_rect(fill = "transparent", color = NA))
+  
+  # Generate the trajectory plot with the appropriate title
+  trajectory_plot <- demographic_trajectory_plot(file_path, group1_condition, group2_condition, group1_label, group2_label, trajectory_plot_title, include_title = include_title, show_legend = show_legend) +
+    theme(plot.background = element_rect(fill = "transparent", color = NA))
+
+  # Combine the plots using patchwork with a small space between the two plots
+  combined_plot <- free(distribution_plot) + trajectory_plot + plot_layout(ncol = 1, heights = c(0.88, 0.33))
+
+  # Sanitize the filename
+  group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
+  base_filename <- if (is.character(override_filename)) override_filename else paste0(group1_label_sanitized, "_demographic_combined")
+  
+  print(combined_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)))
+
+  # Save the combined plot in different formats
+  ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)), width = 8, height = 9, dpi = 300)
+  ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+}
+
+generate_combined_plot(
+  file_path = "Data/Tables/INDIGENOUSxLS Tables CCHS",
+  group1_condition = "indigenous == 'Yes'",
+  group2_condition = "indigenous == 'No'",
+  group1_label = "First Nation, Metis and Inuit",
+  group2_label = "Other Canadians",
+  distribution_plot_title = "Distribution and Trend of First Nation, Metis and Inuit Life Satisfaction",
+  trajectory_plot_title = "Life Satisfaction of First Nation, Metis and Inuit over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+
+generate_combined_plot(
+  file_path = "Data/Tables/MINORITYxLS Tables CCHS",
+  group1_condition = "minority == 'Non-white'",
+  group2_condition = "minority == 'White'",
+  group1_label = "Visible Minority",
+  group2_label = "Other Canadians",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Visible Minority Status",
+  trajectory_plot_title = "Life Satisfaction of Visible Minorities over Time",
+  show_legend = FALSE,
+  include_title = FALSE,
+  year_choice = 2018
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/MENTALHEALTHxLS Tables CCHS",
+  group1_condition = "mental_health <= 1",
+  group2_condition = "mental_health > 1",
+  group1_label = "Poor or Fair Mental Health",
+  group2_label = "Good or Better Mental Health",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Mental Health Status",
+  trajectory_plot_title = "Life Satisfaction of Canadians by Self-Perceived Mental Health over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/LANGUAGExLS Tables CCHS",
+  group1_condition = "language %in% c('French', 'English and French')",
+  group2_condition = "language == 'English'",
+  group1_label = "French Speakers",
+  group2_label = "Other Canadians",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Language",
+  trajectory_plot_title = "Life Satisfaction of Canadians who Learned French before English over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/SEXxLS Tables CCHS",
+  group1_condition = "sex == 'Female'",
+  group2_condition = "sex == 'Male'",
+  group1_label = "Female",
+  group2_label = "Male",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Sex",
+  trajectory_plot_title = "Life Satisfaction of Canadians by Sex at Birth over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/SEXUALORIENTATIONxLS Tables CCHS",
+  group1_condition = "sexual_orientation == 'Sexual minorities'",
+  group2_condition = "sexual_orientation == 'Heterosexual'",
+  group1_label = "Sexual Minorities",
+  group2_label = "Heterosexual Canadians",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Sexual Orientation",
+  trajectory_plot_title = "Life Satisfaction of Sexual Minorities in Canada over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/POVERTYxLS Tables CCHS",
+  group1_condition = "poverty == TRUE",
+  group2_condition = "poverty == FALSE",
+  group1_label = "Low Income (<$25,252)",
+  group2_label = "Other Canadians",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Income",
+  trajectory_plot_title = "Life Satisfaction of Low Income Canadians over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
+
+generate_combined_plot(
+  file_path = "Data/Tables/HOMEOWNERxLS Tables CCHS",
+  group1_condition = "home_owner == FALSE",
+  group2_condition = "home_owner == TRUE",
+  group1_label = "Non-Homeowners",
+  group2_label = "Homeowners",
+  distribution_plot_title = "Distribution and Trend of Life Satisfaction by Homeownership",
+  trajectory_plot_title = "Life Satisfaction of Non-homeowners in Canada over Time",
+  show_legend = FALSE,
+  include_title = FALSE
+)
 
 
 
@@ -817,15 +960,15 @@ demographic_trajectory_plot <- function(file_path, condition1, condition2, group
       geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "0-9 years") %>% 
                    group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
                    aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-                   color = six_tone_scale_colours[1], linetype = "solid", linewidth = 0.5) +
+                   color = colorspace::darken(six_tone_scale_colours[1], amount = 0.3), linetype = "solid", linewidth = 0.5) +
       geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "10 or more years") %>% 
                    group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
                    aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-                   color = six_tone_scale_colours[2], linetype = "solid", linewidth = 0.5) +
+                   color = colorspace::darken(six_tone_scale_colours[2], amount = 0.3), linetype = "solid", linewidth = 0.5) +
       geom_segment(data = plot_data %>% filter(year >= 2021 & condition_met == "Canadian born") %>% 
                    group_by(condition_met) %>% dplyr::summarize(average_ls = first(average_ls)),
                    aes(x = average_ls, xend = average_ls, y = 0, yend = 0.33), 
-                   color = six_tone_scale_colours[5], linetype = "solid", linewidth = 0.5) +
+                   color = colorspace::darken(six_tone_scale_colours[5], amount = 0.3), linetype = "solid", linewidth = 0.5) +
       labs(title = plot_title,
           x = "Life Satisfaction Score",
           y = "Proportion",
@@ -842,7 +985,6 @@ demographic_trajectory_plot <- function(file_path, condition1, condition2, group
   print(demographic_plot)
 
   # Save plot
-  group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
   ggsave(paste0("Output/Final Plots/PNG/immigration_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Final Plots/JPG/immigration_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Final Plots/SVG/immigration_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
@@ -857,8 +999,6 @@ demographic_trajectory_plot <- function(file_path, condition1, condition2, group
   # Print the percentage data
   print(percentage_data)
 
-
-  return(plot_data)
 
 
 
