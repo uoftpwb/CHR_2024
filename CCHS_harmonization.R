@@ -1023,6 +1023,7 @@ for (yr in years) {
 mental_health_en_qc <- cchs %>%
   drop_na(mental_health) %>%
   mutate(
+    year = as.numeric(sub(".*(\\d{4})$", "\\1", year)),
     quebec = if_else(province == "Quebec", 1, if_else(is.na(province), NA_real_, 0)),
     anglophone = case_when(
       language %in% c("English", "English and French") ~ 1,
@@ -1041,7 +1042,7 @@ mental_health_en_qc <- cchs %>%
   ) %>%
   select(-sample_size, -p)
 
-years <- unique(mental_health_en_qc$year)
+years <- unique(mental_health_en_qc$year[!mental_health_en_qc$year %in% c(2009, 2010)])
   
 for (yr in years) {
   filename_year <- gsub("/", "", yr) # Remove "/" from yr
@@ -1484,7 +1485,6 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
           age_ranges = "AGEGROUP"
         ) %>%
         mutate(age_ranges = case_when(
-          age_ranges == ".toless15" ~ "0-14",
           age_ranges == "15toless3" ~ "15-29",
           age_ranges == "30toless4" ~ "30-44",
           age_ranges == "45toless6" ~ "45-59",
@@ -1497,17 +1497,12 @@ purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
           anglophone, 
           age_ranges, 
           year, 
-          frequency = `X_COUNT_`
+          frequency = `X_COUNT_`,
+          se = `X_SE_`
         ) %>%
-        drop_na(mental_health)
-      
-      df <- mutate_based_on_seed_string(df, "mental_health", df$year[1]) %>%
         drop_na(mental_health) %>%
-        group_by(year, mental_health, age_ranges, quebec, anglophone) %>%
-        summarise(
-          frequency = sum(frequency, na.rm = TRUE)
-        ) %>%
-        ungroup()
+        mutate_based_on_seed_string("mental_health", df$year[1]) %>%
+        drop_na(mental_health)
       
       # Create the output directory if it doesn't exist
       output_dir <- "Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS"
