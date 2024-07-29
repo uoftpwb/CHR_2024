@@ -11,6 +11,7 @@ library(RColorBrewer)
 library(stringr)
 library(Hmisc)
 library(dplyr)
+summarize <- dplyr::summarize
 
 ######### DECLARE THEMES AND COLOURS #########
 theme_chr <- function() {
@@ -1100,6 +1101,277 @@ ggsave(paste0("Output/Final Plots/JPG/immigration_distribution_combined.jpg"), p
 ggsave(paste0("Output/Final Plots/SVG/immigration_distribution_combined.svg"), plot = combined_immigration_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
 
 
+########################### MENTAL HEALTH PLOTS ############################
+
+data_source_caption <- "Data Source: Canadian Community Health Survey"
+
+data <- list.files(path = "Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS", pattern = "*.csv", full.names = TRUE) %>%
+  purrr::map_dfr(~ read.csv(.x) %>%
+    mutate(year = as.numeric(paste0("20", sub(".*_(.*)_CCHS.csv", "\\1", .x))))) %>%
+  mutate(year = case_when(year %in% c(2016, 2018, 2020) ~ year,
+                          year <= 2023 ~ year + 0.5),
+         mental_health = as.numeric(mental_health)) %>%
+  group_by(year) %>%
+  mutate(WGT = frequency / sum(frequency) * 65000) %>%
+  ungroup()
+
+plot_data <- data %>%
+  drop_na(age_ranges) %>%
+  group_by(year, age_ranges) %>%
+  dplyr::summarize(
+    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm = TRUE),
+    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_mh = sqrt(var_mh / n),
+    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
+    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
+  )
+
+plot_data_quebec <- data %>%
+  filter(quebec == 1) %>%
+  drop_na(age_ranges) %>%
+  group_by(year, age_ranges) %>%
+  dplyr::summarize(
+    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm = TRUE),
+    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_mh = sqrt(var_mh / n),
+    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
+    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
+  )
+
+plot_data_quebec_anglophone <- data %>%
+  filter(quebec == 1 & anglophone == 1) %>%
+  drop_na(age_ranges) %>%
+  group_by(year, age_ranges) %>%
+  dplyr::summarize(
+    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm = TRUE),
+    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_mh = sqrt(var_mh / n),
+    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
+    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
+  )
+
+  plot_data_comparison <- data %>%
+  mutate(queb_franc = ifelse(is.na(quebec) | is.na(anglophone), NA, quebec == 1 & anglophone == 0),
+         young = ifelse(is.na(age_ranges) , NA, age_ranges %in% c("15-29"))) %>%
+  drop_na(age_ranges) %>%
+  group_by(year, queb_franc, young) %>%
+  dplyr::summarize(
+    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
+    n = sum(WGT, na.rm = TRUE),
+    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se_mh = sqrt(var_mh / n),
+    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
+    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
+  )
+  
+
+
+# Function to create and save plots
+create_and_save_plot <- function(plot_data, title, filename_suffix) {
+  # Automatically determine min_y and max_y based on the confidence intervals
+  min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
+  max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
+  y_breaks <- seq(min_y, max_y, by = 0.5)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+
+  trajectory_plot <- ggplot() +
+    geom_rect(data = rect_data, 
+              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+              aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+              aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
+    geom_point(data = plot_data, 
+               aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
+    labs(title = title,
+         y = "Average Mental Health",
+         color = "Age Range",
+         fill = "Age Range",
+         caption = data_source_caption) +
+    theme_chr() +
+    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
+    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
+                        expand = c(0, 0)) +
+    scale_color_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges))) +
+    scale_fill_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges)))
+  # Print the plot
+  print(trajectory_plot)
+  # Save the plot in different formats
+  ggsave(paste0("Output/Final Plots/PNG/", filename_suffix, "_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/JPG/", filename_suffix, "_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
+  ggsave(paste0("Output/Final Plots/SVG/", filename_suffix, "_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+}
+
+# Function to create and save plots
+mental_health_comparison_plot <- function(plot_data, title, filename_suffix) {  
+
+  min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
+  max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
+  y_breaks <- seq(min_y, max_y, by = 0.5)
+  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+  trajectory_plot <- ggplot() +
+    geom_rect(data = rect_data, 
+              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
+    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == TRUE), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == TRUE), 
+              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == FALSE), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == FALSE), 
+              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == TRUE), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == TRUE), 
+              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
+    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == FALSE), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
+    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == FALSE), 
+              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
+    geom_point(data = plot_data, 
+               aes(x = year, y = average_mh, color = young, shape = queb_franc), show.legend = TRUE) +
+    labs(title = title,
+         y = "Average Mental Health",
+         color = "Group",
+         fill = "Group",
+         linetype = "Region",
+         shape = "Region",
+         caption = data_source_caption) +
+    theme_chr() +
+    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
+    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
+    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
+                        expand = c(0, 0)) +
+    scale_color_manual(values = setNames(six_tone_scale_colours[1:2], c("15-29", "30+"))) +
+    scale_fill_manual(values = setNames(six_tone_scale_colours[1:2], c("15-29", "30+"))) +
+    scale_linetype_manual(values = c("solid", "dashed"), labels = c("Rest of Canada", "Francophones in Quebec")) +
+    scale_shape_manual(values = c(16, 17), labels = c("Rest of Canada", "Francophones in Quebec"))
+  # Print the plot
+  print(trajectory_plot)
+  # Save the plot in different formats
+  # ggsave(paste0("Output/Final Plots/PNG/", filename_suffix, "_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/JPG/", filename_suffix, "_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
+  # ggsave(paste0("Output/Final Plots/SVG/", filename_suffix, "_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+}
+
+# Create and save plots for different conditions
+create_and_save_plot(plot_data, "Self-Reported Mental Health by Age Range", "mental_health_canada")
+
+
+
+
+
+
+plot_data_quebec <- plot_data %>% filter(quebec == 1)
+create_and_save_plot(plot_data_quebec, "Average Life Satisfaction by Age Range (Quebec)", "mental_health_quebec")
+
+plot_data_quebec_anglophone <- plot_data %>% filter(quebec == 1 & anglophone == 1)
+create_and_save_plot(plot_data_quebec_anglophone, "Average Life Satisfaction by Age Range (Quebec Anglophones)", "mental_health_quebec_anglophone")
+
+
+mental_health_comparison_plot(plot_data_comparison, "Average Life Satisfaction by Age Range", "mental_health_canada")
+
+################################ MENTAL HEALTH COMPARISON PLOT ################################
+
+# Create plot_data_comparison by mutating and summarizing the data
+plot_data_comparison <- data %>%
+mutate(
+  queb_franc = ifelse(is.na(quebec) | is.na(anglophone), NA, ifelse(quebec == 1 & anglophone == 0, 1, ifelse(quebec == 1 & anglophone == 1, 2, 0))),  # Create queb_franc variable
+  young = ifelse(is.na(age_ranges), NA, age_ranges %in% c("15-29"))  # Create young variable
+) %>%
+drop_na(age_ranges, queb_franc) %>%  # Drop rows with NA in age_ranges or queb_franc
+filter(young == 1) %>%  # Filter for young == 1
+group_by(year, queb_franc) %>%  # Group by year and queb_franc
+dplyr::summarize(
+  average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),  # Calculate weighted mean of mental_health
+  n = sum(WGT, na.rm = TRUE),  # Sum of weights
+  var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),  # Calculate weighted variance of mental_health
+  .groups = "drop"
+) %>%
+mutate(
+  se_mh = sqrt(var_mh / n),  # Calculate standard error
+  ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,  # Calculate lower bound of confidence interval
+  ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh  # Calculate upper bound of confidence interval
+)
+
+# Convert queb_franc to a factor with specific labels
+plot_data_comparison$queb_franc <- factor(plot_data_comparison$queb_franc, levels = c(0, 1, 2), labels = c("Canadians\noutside Quebec", "Quebec Francophones", "Quebec Anglophones"))
+
+# Calculate y-axis limits and breaks
+min_y <- floor(min(plot_data_comparison$ci_lower, na.rm = TRUE) * 2) / 2
+max_y <- ceiling(max(plot_data_comparison$ci_upper, na.rm = TRUE) * 2) / 2
+y_breaks <- seq(min_y, max_y, by = 0.5)
+
+# Create data for background rectangles
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+
+# Create the trajectory plot
+trajectory_plot <- ggplot() +
+    geom_rect(data = rect_data, 
+              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +  # Add background rectangles
+    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +  # Add dashed line for 2015
+    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +  # Add dashed line for 2022
+    geom_ribbon(data = plot_data_comparison %>% filter(year >= 2009 & year <= 2015), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = as.character(queb_franc)), alpha = 0.2, show.legend = TRUE) +  # Add confidence interval ribbons for 2009-2015
+    geom_line(data = plot_data_comparison %>% filter(year >= 2009 & year <= 2015), 
+              aes(x = year, y = average_mh, color = as.character(queb_franc)), show.legend = TRUE) +  # Add lines for 2009-2015
+    geom_ribbon(data = plot_data_comparison %>% filter(year >= 2015 & year <= 2022), 
+                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = as.character(queb_franc)), alpha = 0.2, show.legend = TRUE) +  # Add confidence interval ribbons for 2015-2022
+    geom_line(data = plot_data_comparison %>% filter(year >= 2015 & year <= 2022), 
+              aes(x = year, y = average_mh, color = as.character(queb_franc)), show.legend = TRUE) +  # Add lines for 2015-2022
+    geom_point(data = plot_data_comparison, 
+               aes(x = year, y = average_mh, color = as.character(queb_franc), shape = as.character(queb_franc)), show.legend = TRUE) +  # Add points
+    labs(title = "Youth Mental Health in Quebec and the Rest of Canada",
+         y = "Average Mental Health for Ages 15-29",
+         color = "Group",
+         fill = "Group",
+         shape = "Group",
+         caption = data_source_caption) +  # Add labels
+    theme_chr() +
+    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
+    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +  # Set y-axis limits and breaks
+    scale_x_continuous(limits = c(floor(min(plot_data_comparison$year, na.rm = TRUE)-0.01), ceiling(max(plot_data_comparison$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data_comparison$year, na.rm = TRUE)-0.01), ceiling(max(plot_data_comparison$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data_comparison$year, na.rm = TRUE)-0.01), ceiling(max(plot_data_comparison$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
+                      expand = c(0, 0)) +  # Set x-axis limits and breaks
+    scale_color_manual(values = setNames(six_tone_scale_colours[1:3], unique(plot_data_comparison$queb_franc))) +  # Set color scale
+    scale_fill_manual(values = setNames(six_tone_scale_colours[1:3], unique(plot_data_comparison$queb_franc))) +  # Set fill scale
+    scale_shape_manual(values = c(16, 17, 18))  # Set shape scale
+
+# Print the plot
+print(trajectory_plot)
+
+# Save the plot in different formats
+ggsave(paste0("Output/Final Plots/PNG/mental_health_comparison_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/mental_health_comparison_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/mental_health_comparison_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 
 ###########################################################################################################
