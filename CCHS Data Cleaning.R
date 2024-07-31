@@ -1,0 +1,1276 @@
+# CCHS Analyses for Canadian Happiness Report
+# Author: Phyllis Lun and Anthony McCanny
+# Date: April 23, 2024
+###############################################
+
+#Loading libraries and setting directory -----------------------------------
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(tidyr)
+
+#setwd("~/Documents/*UoT/PWB/YMH/CCHS") # Change this to your own directory
+
+########### Reading CCHS data #############
+
+# Set the path to the directory containing the CSV files
+directory <- "Data/CCHS PUMF"
+
+# Get the list of CSV files in the directory
+csv_files <- list.files(path = directory, pattern = "\\.csv$", full.names = TRUE)
+
+# Read all CSV files into a list of data frames with names based on the file names
+data_frames <- setNames(lapply(csv_files, read.csv), sapply(csv_files, function(f) {
+  file_name <- tools::file_path_sans_ext(basename(f))
+  gsub("-", "_", file_name) # Replace hyphens with underscores for valid R variable names
+}))
+
+# Assign each data frame from the list to a separate variable in the global environment
+list2env(data_frames, envir = .GlobalEnv)
+
+
+##### Declare Useful Mappings #####
+
+##Province: GEO_PRV----
+GEO_PRV_MAPPING <- tibble(
+  PRV_NAME = c(
+    "Newfoundland and Labrador",
+    "Prince Edward Island",
+    "Nova Scotia",
+    "New Brunswick",
+    "Quebec",
+    "Ontario",
+    "Manitoba",
+    "Saskatchewan",
+    "Alberta",
+    "British Columbia",
+    "Yukon",
+    "Northwest Territories",
+    "Nunavut"),
+  PRV_NUM = c(10, 11, 12, 13, 24, 35, 46, 47, 48, 59, 60, 61,62))
+
+### Used in 2013-2014
+GEO_PRV_MAPPING_2 <- tibble(
+  PRV_NAME = c(
+    "Newfoundland and Labrador",
+    "Prince Edward Island",
+    "Nova Scotia",
+    "New Brunswick",
+    "Quebec",
+    "Ontario",
+    "Manitoba",
+    "Saskatchewan",
+    "Alberta",
+    "British Columbia",
+    "Yukon/Northwest Territories/Nunavut"),
+  PRV_NUM = c(10, 11, 12, 13, 24, 35, 46, 47, 48, 59, 60))
+
+## Age: DHHGAGE
+DHHGAGE_mapping <- tibble(
+  DHHGAGE_NAME = c(
+    "12-14", "15-17", "18-19", "20-24", "25-29", "30-34",
+    "35-39", "40-44", "45-49", "50-54", "55-59", "60-64",
+    "65-69", "70-74", "75-79", "80+"),
+  DHHGAGE_NUM = c(1:16))
+
+##Marital Status: DHHGMS
+INCDGHH_mapping <- tibble(
+  INCDGHH_NAME = c(
+    "≤$20,000", "$20,000-$39,999", "$40,000-$59,999",
+    "$60,000-$79,999", "$80,000 or more", NA_character_),
+  INCDGHH_NUM = c(1:5, 9))
+
+## Declare list of variables for identifying the rows in the two-year files which are present in the one-year files
+matching_variables <- c(
+  "GEOGPRV", "DHHGAGE", "DHH_SEX", "GEODPMF", "DHHGLE5", "DHHG611", "DHHGL12", 
+  "DHHGLVG", "DHHGHSZ", "GEN_01", "GEN_02", "GEN_02A2", "GEN_02B", "GEN_07", 
+  "GEN_08", "GEN_09", "GEN_10", "GENDHDI", "GENDMHI", "GENGSWL",  
+  "CIH_1", "CIH_2", "CIH_3", "CIH_4", "CIH_5", "CIH_6A", "CIH_6I", "CIH_6B", 
+  "CIH_6J", "CIH_6K", "CIH_6G", "CIH_6F", "CIH_6E", "CIH_6L", "CIH_6M", "CIH_6N", 
+  "CIH_6H", "CIH_7", "CIH_8A", "CIH_8B", "CIH_8C", "CIH_8J", "CIH_8K", "CIH_8G", 
+  "CIH_8L", "CIH_8H", "CIH_8I", "HWT_4", 
+  "HWTGHTM", "HWTGWTK", "HWTGBMI", "HWTGISW", "HWTDCOL", "CCC_031", "CCC_035", 
+  "CCC_036", "CCC_051", "CCC_061", "CCC_071", "CCC_072", "CCC_073", "CCC_073A", 
+  "CCC_073B", "CCC_081", "CCC_091", "CCC_101", "CCCG102", "CCC_10A", "CCC_10B", 
+  "CCC_10C", "CCC_105", "CCC_106", "CCC_121", "CCC_131", "CCC_31A", "CCC_141", 
+  "CCC_151", "CCC_161", "CCC_171", "CCC_17A", "CCC_280", "CCC_290", "CCCDDIA",
+  "INCG2", "INCG7", "INCGHH", "INCGPER", "FSC_010", "FSC_020", 
+  "FSC_030", "FSC_040", "FSC_050", "FSC_060", "FSC_070", "FSC_080", 
+  "FSC_081", "FSC_090", "FSC_100", "FSC_110", "FSC_120", "FSC_121", 
+  "FSC_130", "FSC_140", "FSC_141", "FSC_150", "FSC_160", "LBSGHPW"
+)
+
+######### VARIABLE LABELS #########
+health_labels <- c("Poor" = 0, "Fair" = 1, "Good" = 2, "Very good" = 3, "Excellent" = 4) # For health and mental_health variables
+income_labels <- c("≤$20,000" = 1, "$20,000-$39,999" = 2, "$40,000-$59,999" = 3, "$60,000-$79,999" = 4, "$80,000 or more" = 5)
+stress_labels <- c("Not at all stressful" = 0, "Not very stressful" = 1, "A bit stressful" = 2, "Quite a bit stressful" = 3, "Extremely stressful" = 4) # For work and life stress
+belonging_labels <- c("Very weak" = 0, "Somewhat weak" = 1, "Somewhat strong" = 2, "Very strong" = 3)
+sleep_hours_labels <- c("Less than 3 hours" = 1.5, "3-4 hours" = 3, "4-5 hours" = 4, "5-6 hours" = 5, "6-7 hours" = 6, "7-8 hours" = 7, "8-9 hours" = 8, "9-10 hours" = 9, "10-11 hours" = 10, "11-12 hours" = 11, "12 hours or more" = 12)
+sleep_refreshing_labels <- c("Never" = 0, "Rarely" = 1, "Sometimes" = 2, "Most of the time" = 3, "All of the time" = 4)
+satisfaction_labels <- c("Very dissatisfied" = 0, "Dissatisfied" = 1, "Neither satisfied nor dissatisfied" = 2, "Satisfied" = 3, "Very satisfied" = 4)
+live_arrange_labels <- c(
+  "Unattached individual living alone" = 1,
+  "Unattached individual living with others" = 2,
+  "Individual living with spouse/partner" = 3,
+  "Parent living with spouse/partner and child(ren)" = 4,
+  "Single parent living with children" = 5,
+  "Child living with a single parent with or without siblings" = 6,
+  "Child living with two parents with or without siblings" = 7,
+  "Other" = 8
+)
+
+######### CCHS_2017-2018 ~ Renaming and Cleaning ##########
+
+cchs_2017_2018 <- cchs_pumf_2017_2018 %>%
+  select(
+    ls = GEN_010,
+    province = GEO_PRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCDGHH,
+    hh_size = DHHDGHSZ,
+    language = SDCDVFLS,
+    immigration_status = SDCDVIMM,
+    time_in_canada = SDCDGRES,
+    mental_health = GEN_015,
+    own_home = DHH_OWN,
+    live_arrange = DHHDGLVG,
+    indigenous = SDC_015,
+    minority = SDCDGCGT,
+    weight = WTS_M,
+    sex_diversity = SDC_035,
+    education = EHG2DVR3,
+    health = GEN_005,
+    life_stress = GEN_020,
+    work_stress = GEN_025,
+    belonging = GEN_030,
+    sleep_hours = SLPG005,
+    sleep_refreshing = SLP_015,
+    smoke = SMK_010,
+    alt_tobacco = TALDVUSE,
+    alcohol = ALCDVTTM,
+    job_sat = SWL_005,
+    leisure_sat = SWL_010,
+    finance_sat = SWL_015,
+    you_sat = SWL_020,
+    body_sat = SWL_025,
+    family_sat = SWL_030,
+    friends_sat = SWL_035,
+    housing_sat = SWL_040,
+    neighbourhood_sat = SWL_045,
+    phq9 = DEPDVPHQ,
+    employed = LBFG10,
+    student = MAC_015,
+    screentime_weekday=SBE_005, 
+    screentime_weekend=SBE_010, 
+    sps_attachment=SPSDVATT,
+    sps_integration=SPSDVINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          indigenous = case_when(indigenous == 1 ~ "Yes", indigenous == 2 ~ "No", indigenous == 6 ~ "No", TRUE ~ NA_character_),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          sex_diversity = case_when(sex_diversity == 1 ~ "Heterosexual", sex_diversity == 2 ~ "Sexual minorities", 
+                                   sex_diversity == 3 ~ "Sexual minorities", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_), #CHANGE TO smoke > 1 for 2014 and earlier
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          phq9 = case_when(phq9 <= 27 ~ phq9, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_) ,
+          screentime_weekday=case_when(screentime_weekday==1~"2 hours or less per day",screentime_weekday==2~"More than 2 hours but less than 4 hours",screentime_weekday==3~"4 hours to less than 6 hours",
+                                       screentime_weekday==4~ "6 hours to less than 8 hours",screentime_weekday==5~"8 hours or more per day",screentime_weekday==6~"Was not at work or school",TRUE ~ NA_character_),
+          screentime_weekend=case_when(screentime_weekend==1~"2 hours or less per day",screentime_weekend==2~"More than 2 hours but less than 4 hours",screentime_weekend==3~"4 hours to less than 6 hours",
+                                       screentime_weekend==4~ "6 hours to less than 8 hours",screentime_weekend==5~"8 hours or more per day",screentime_weekend==6~"Was not at work or school",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+cchs_2017_2018$sps_attachment
+cchs_2017_2018$sps_integration
+
+######### CCHS_2015-2016 ~ Renaming and Cleaning ##########
+
+cchs_2015_2016 <- cchs_pumf_2015_2016 %>%
+  select(
+    ls = GEN_010,
+    province = GEO_PRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCDGHH,
+    hh_size = DHHDGHSZ,
+    language = SDCDVFLS,
+    immigration_status = SDCDVIMM,
+    time_in_canada = SDCDGRES,
+    mental_health = GEN_015,
+    own_home = DHH_OWN,
+    live_arrange = DHHDGLVG,
+    indigenous = SDC_015,
+    minority = SDCDGCGT,
+    weight = WTS_M,
+    sex_diversity = SDC_035,
+    education = EHG2DVR3,
+    health = GEN_005,
+    life_stress = GEN_020,
+    work_stress = GEN_025,
+    belonging = GEN_030,
+    sleep_hours = SLPG005,
+    sleep_refreshing = SLP_015,
+    smoke = SMK_010,
+    alt_tobacco = TALDVUSE,
+    alcohol = ALCDVTTM,
+    job_sat = SWL_005,
+    leisure_sat = SWL_010,
+    finance_sat = SWL_015,
+    you_sat = SWL_020,
+    body_sat = SWL_025,
+    family_sat = SWL_030,
+    friends_sat = SWL_035,
+    housing_sat = SWL_040,
+    neighbourhood_sat = SWL_045,
+    phq9 = DEPDVPHQ,
+    employed = LBFG10,
+    student = MAC_015,
+    screentime_week=SACDVTER,
+    sps_attachment=SPSDVATT,
+    sps_integration=SPSDVINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          indigenous = case_when(indigenous == 1 ~ "Yes", indigenous == 2 ~ "No", indigenous == 6 ~ "No", TRUE ~ NA_character_),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          sex_diversity = case_when(sex_diversity == 1 ~ "Heterosexual", sex_diversity == 2 ~ "Sexual minorities", 
+                                   sex_diversity == 3 ~ "Sexual minorities", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_), #CHANGE TO smoke > 1 for 2014 and earlier
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          phq9 = case_when(phq9 <= 27 ~ phq9, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+
+######### CCHS_2013-2014 ~ Renaming, Separating and Cleaning ##########
+
+### Separate 2013 and 2014 observations before continuing
+
+# Extract just the rows in the two-year file that aren't present in the one-year file to make the first one-year file
+cchs_pumf_2013 <- anti_join(cchs_pumf_2013_2014, cchs_pumf_2014, by = matching_variables)
+
+cchs_2013 <- cchs_pumf_2013 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    language = SDCDFOLS,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    sleep_hours = SLPG01, 
+    sleep_refreshing = SLP_03, 
+    smoke = SMK_05C,
+    alt_tobacco,
+    TAL_1, TAL_2, TAL_3, TAL_4,
+    alcohol = ALCDTTM,
+    employed = LBSG31,
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+cchs_2014 <- cchs_pumf_2014 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    language = SDCDFOLS,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    sleep_hours = SLPG01, 
+    sleep_refreshing = SLP_03, 
+    smoke = SMK_05C, 
+    alt_tobacco,
+    alcohol = ALCDTTM,
+    employed = LBSDPFT,
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),          
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+
+######### CCHS_2011-2012 ~ Separating, Renaming and Cleaning ##########
+
+# Extract just the rows in the two-year file that aren't present in the one-year file to make the first one-year file
+cchs_pumf_2011 <- anti_join(cchs_pumf_2011_2012, cchs_pumf_2012, by = matching_variables)
+
+cchs_2011 <- cchs_pumf_2011 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    language = SDCDFOLS,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    sleep_hours = SLPG01,
+    sleep_refreshing = SLP_03,
+    smoke = SMK_05C,
+    alt_tobacco,
+    alcohol = ALCDTTM,
+    job_sat = SWL_02,
+    leisure_sat = SWL_03,
+    finance_sat = SWL_04,
+    you_sat = SWL_05,
+    body_sat = SWL_06,
+    family_sat = SWL_07,
+    friends_sat = SWL_08,
+    housing_sat = SWL_09,
+    neighbourhood_sat = SWL_10,
+    employed = LBSG31,
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+cchs_2012 <- cchs_pumf_2012 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    language = SDCDFOLS,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    sleep_hours = SLPG01,
+    sleep_refreshing = SLP_03,
+    smoke = SMK_05C,
+    alt_tobacco,
+    alcohol = ALCDTTM,
+    job_sat = SWL_02,
+    leisure_sat = SWL_03,
+    finance_sat = SWL_04,
+    you_sat = SWL_05,
+    body_sat = SWL_06,
+    family_sat = SWL_07,
+    friends_sat = SWL_08,
+    housing_sat = SWL_09,
+    neighbourhood_sat = SWL_10,
+    employed = LBSG31,
+    student = SDC_8,
+    screentime_week=SACDTER,
+    sps_attachment=SPSDATT,
+    sps_integration=SPSDINT
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          language = case_when(language == 1 ~ "English", language == 2 ~ "French", 
+                                language == 3 ~ "English and French", language == 4 ~ "Neither English nor French", TRUE ~ NA_character_),
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          sleep_hours = case_when(sleep_hours == 1 ~ 1.5, (sleep_hours >= 2 & sleep_hours <=11) ~ sleep_hours + 1, TRUE ~ NA_integer_),
+          sleep_refreshing = case_when(sleep_refreshing <= 5 ~ sleep_refreshing - 1, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_),
+          sps_attachment=case_when(sps_attachment<=8~sps_attachment, TRUE ~ NA_integer_),
+          sps_integration=case_when(sps_integration<=8~sps_integration, TRUE ~ NA_integer_))
+
+
+######### CCHS_2009-2010 ~ Separating, Renaming and Cleaning ##########
+
+# Extract just the rows in the two-year file that aren't present in the one-year file to make the first one-year file
+cchs_pumf_2009 <- anti_join(cchs_pumf_2009_2010, cchs_pumf_2010, by = matching_variables)
+
+cchs_2009 <- cchs_pumf_2009 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    smoke = SMK_05C,
+    alt_tobacco,
+    alcohol = ALCDTTM,
+    job_sat = SWL_02,
+    leisure_sat = SWL_03,
+    finance_sat = SWL_04,
+    you_sat = SWL_05,
+    body_sat = SWL_06,
+    family_sat = SWL_07,
+    friends_sat = SWL_08,
+    housing_sat = SWL_09,
+    neighbourhood_sat = SWL_10,
+    employed = LBSG31,
+    student = SDC_8,
+    screentime_week=SACDTER
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_))
+
+cchs_2010 <- cchs_pumf_2010 %>%
+  rowwise() %>%
+  mutate(alt_tobacco = case_when(
+    1 %in% c(TAL_1, TAL_2, TAL_3, TAL_4) ~ 1,
+    all(c(TAL_1, TAL_2, TAL_3, TAL_4) == 2) ~ 2,
+    TRUE ~ NA_real_
+  )) %>%
+  ungroup() %>%
+  select(
+    ls = GEN_02A2,
+    province = GEOGPRV,
+    sex = DHH_SEX,
+    age = DHHGAGE,
+    marital = DHHGMS,
+    hh_income = INCGHH,
+    hh_size = DHHGHSZ,
+    immigration_status = SDCFIMM,
+    time_in_canada = SDCGRES,
+    mental_health = GEN_02B,
+    own_home = DHH_OWN,
+    live_arrange = DHHGLVG, 
+    minority = SDCGCGT,
+    weight = WTS_M,
+    education = EDUDR04,
+    health = GEN_01,
+    life_stress = GEN_07,
+    work_stress = GEN_09,
+    belonging = GEN_10,
+    smoke = SMK_05C,
+    alt_tobacco,
+    alcohol = ALCDTTM,
+    job_sat = SWL_02,
+    leisure_sat = SWL_03,
+    finance_sat = SWL_04,
+    you_sat = SWL_05,
+    body_sat = SWL_06,
+    family_sat = SWL_07,
+    friends_sat = SWL_08,
+    housing_sat = SWL_09,
+    neighbourhood_sat = SWL_10,
+    employed = LBSG31,
+    student = SDC_8,
+    screentime_week=SACDTER
+  ) %>% 
+  mutate( ls = case_when(ls <= 10 ~ ls, TRUE ~ NA_integer_),
+          province = GEO_PRV_MAPPING_2$PRV_NAME[match(province, GEO_PRV_MAPPING$PRV_NUM)],
+          sex = case_when(sex == 1 ~ "Male", sex == 2 ~ "Female", TRUE ~ NA_character_), 
+          age = DHHGAGE_mapping$DHHGAGE_NAME[match(age, DHHGAGE_mapping$DHHGAGE_NUM)],
+          marital = case_when(marital == 1 ~ "Married/Common-law", marital == 2 ~ "Married/Common-law", 
+                              marital == 3 ~ "Widowed/Divorced/Separated", marital == 4 ~ "Single", TRUE ~ NA_character_),
+          hh_income = case_when(hh_income <= 5 ~ hh_income, TRUE ~ NA_integer_),
+          hh_size = case_when(hh_size == 9 ~ NA_integer_, TRUE ~ hh_size), 
+          immigration_status = case_when(immigration_status == 1 ~ "Landed immigrant/non-permanent resident", immigration_status == 2 ~ "Canadian born", TRUE ~ NA_character_),
+          time_in_canada = case_when(time_in_canada == 1 ~ "0-9 years", time_in_canada == 2 ~ "10 or more years", 
+                                      time_in_canada == 6 ~ "Canadian born", TRUE ~ NA_character_),
+          mental_health = case_when(mental_health <= 5 ~ 5 - mental_health, TRUE ~ NA_integer_),
+          live_arrange = case_when(live_arrange >= 1 & live_arrange <= 8 ~ as.numeric(live_arrange), TRUE ~ NA_integer_),
+          own_home = case_when(
+            live_arrange >= 1 & live_arrange <= 5 & own_home == 1 ~ "Owns home",
+            is.na(live_arrange) | (own_home != 1 & own_home != 2) ~ NA_character_,
+            TRUE ~ "Does not own home"
+          ),
+          minority = case_when(minority == 1 ~ "White", minority == 2 ~ "Non-white", minority == 6 ~ "Non-white", TRUE ~ NA_character_),
+          education = case_when(education == 1 ~ "Less than secondary", education == 2 ~ "Secondary", education == 3 | education == 4 ~ "Post-secondary", TRUE ~ NA_character_),
+          health = case_when(health <= 5 ~ 5 - health, TRUE ~ NA_integer_),
+          life_stress = case_when(life_stress <= 5 ~ life_stress - 1, TRUE ~ NA_integer_),
+          work_stress = case_when(work_stress <= 5 ~ work_stress - 1, TRUE ~ NA_integer_),
+          belonging = case_when(belonging <= 4 ~ 4 - belonging, TRUE ~ NA_integer_),
+          smoke = case_when(smoke > 0 & smoke <= 41 ~ 1, smoke == 0 ~ 2, smoke == 96 ~ 2, TRUE ~ NA_integer_),
+          nicotine = case_when(smoke == 1 | alt_tobacco == 1 ~ "Yes", smoke == 2 & alt_tobacco == 2 ~ "No", TRUE ~ NA_character_),
+          alcohol = case_when(alcohol == 1 ~ "Regular", alcohol == 2 ~ "Occasional", alcohol == 3 ~ "Did not drink in 12 mos"),
+          job_sat = case_when(job_sat <= 5 ~ 5 - job_sat, TRUE ~ NA_integer_),
+          leisure_sat = case_when(leisure_sat <= 5 ~ 5 - leisure_sat, TRUE ~ NA_integer_),
+          finance_sat = case_when(finance_sat <= 5 ~ 5 - finance_sat, TRUE ~ NA_integer_),
+          you_sat = case_when(you_sat <= 5 ~ 5 - you_sat, TRUE ~ NA_integer_),
+          body_sat = case_when(body_sat <= 5 ~ 5 - body_sat, TRUE ~ NA_integer_),
+          family_sat = case_when(family_sat <= 5 ~ 5 - family_sat, TRUE ~ NA_integer_),
+          friends_sat = case_when(friends_sat <= 5 ~ 5 - friends_sat, TRUE ~ NA_integer_),
+          housing_sat = case_when(housing_sat <= 5 ~ 5 - housing_sat, TRUE ~ NA_integer_),
+          neighbourhood_sat = case_when(neighbourhood_sat <= 5 ~ 5 - neighbourhood_sat, TRUE ~ NA_integer_),
+          employed = case_when(employed == 1 ~ "Employed", employed == 2 ~ "Self-employed", employed == 6 ~ "Not employed", TRUE ~ NA_character_),
+          student = case_when(student == 1 ~ "Student", student == 2 ~ "Not a student", TRUE ~ NA_character_),
+          screentime_week=case_when(screentime_week==1~"Less than 5 hours",screentime_week==2~"From 5 to 9 hours",screentime_week==3~"From 10 to 14 hours",screentime_week==4~"From 15 to 19 hours",
+                                    screentime_week==5~"From 20 to 24 hours",screentime_week==6~"From 25 to 29 hours",screentime_week==7~"From 30 to 34 hours",screentime_week==8~"From 35 to 39 hours",
+                                    screentime_week==9~"From 40 to 44 hours",screentime_week==10~"45 hours or more",TRUE ~ NA_character_))
+
+
+######### Combine the Dataframes and Save ########
+
+# Combine the data frames for the years 2009 to 2014 with the combined data frames for 2015/2016 and 2017/2018 into one data frame
+cchs <- bind_rows(
+  cchs_2009 %>% mutate(year = "2009", graphic_year = 2009),
+  cchs_2010 %>% mutate(year = "2010", graphic_year = 2010),
+  cchs_2011 %>% mutate(year = "2011", graphic_year = 2011),
+  cchs_2012 %>% mutate(year = "2012", graphic_year = 2012),
+  cchs_2013 %>% mutate(year = "2013", graphic_year = 2013),
+  cchs_2014 %>% mutate(year = "2014", graphic_year = 2014),
+  cchs_2015_2016 %>% mutate(year = "2015/2016", graphic_year = 2015.5),
+  cchs_2017_2018 %>% mutate(year = "2017/2018", graphic_year = 2017.5)
+)
+write.csv(cchs, file = "Data/combined_cchs_data.csv", row.names = FALSE)
+
+rm(list=ls(pattern="^cchs_"))
+
+save.image("CCHS_harmonization.RData") 
+load("CCHS_harmonization.RData")
+
+
+
+######################### Variable Processing #############################
+
+income_labels <- c("≤$20,000" = 1, "$20,000-$39,999" = 2, "$40,000-$59,999" = 3, "$60,000-$79,999" = 4, "$80,000 or more" = 5)
+
+cchs<- read.csv("Data/combined_cchs_data.csv") %>%
+  # Process income variables, by assigning the median income value to each range, then calculating equivalized household income
+  mutate( hh_income_medians = case_when(hh_income == 1 ~ 10000, 
+                                        hh_income == 2 ~ 30000,
+                                        hh_income == 3 ~ 50000,
+                                        hh_income == 4 ~ 70000,
+                                        hh_income == 5 ~ 100000),
+          equiv_income = hh_income_medians / sqrt(hh_size)) %>%
+  # Process ages into pre-specified age ranges
+  mutate(age_ranges = case_when(
+    age %in% c("15-17", "18-19", "20-24", "25-29") ~ "15-29",
+    age %in% c("30-34", "35-39", "40-44") ~ "30-44",
+    age %in% c("45-49", "50-54", "55-59") ~ "45-59",
+    age %in% c("60-64", "65-69", "70-74", "75-79", "80+") ~ "60+",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(
+    numeric_year = case_when(
+      year == "2015/2016" ~ 2015,
+      year == "2017/2018" ~ 2017,
+      TRUE ~ as.numeric(year)
+    ),
+    median_birth_year = case_when(
+      age == "80+" ~ numeric_year - 80,
+      TRUE ~ numeric_year - as.numeric(sub("^(\\d+)-.*", "\\1", age)) - (as.numeric(sub(".*-(\\d+)$", "\\1", age)) - as.numeric(sub("^(\\d+)-.*", "\\1", age))) / 2
+  )) %>%
+  mutate(
+    generation = case_when(
+            median_birth_year <= 1945 ~ "Silent Generation",
+            median_birth_year >= 1946 & median_birth_year <= 1964 ~ "Baby Boomers",
+            median_birth_year >= 1965 & median_birth_year <= 1980 ~ "Generation X",
+            median_birth_year >= 1981 & median_birth_year <= 1996 ~ "Millennials",
+            median_birth_year >= 1997 & median_birth_year <= 2012 ~ "Generation Z",
+            TRUE ~ NA_character_)
+  )
+
+
+###################### Mental Health x Age by Quebec Residents and Language Spoken ################
+
+mental_health_en_qc <- cchs %>%
+  drop_na(mental_health) %>%
+  mutate(
+    year = as.numeric(sub(".*(\\d{4})$", "\\1", year)),
+    quebec = if_else(province == "Quebec", 1, if_else(is.na(province), NA_real_, 0)),
+    anglophone = case_when(
+      language %in% c("English", "English and French") ~ 1,
+      is.na(language) ~ NA_real_,
+      TRUE ~ 0
+    )) %>%
+    group_by(year) %>%
+    mutate(sample_size = sum(weight, na.rm = TRUE)) %>%
+  group_by(year, mental_health, age_ranges, quebec, anglophone) %>%
+  summarise(
+    frequency = sum(weight, na.rm = TRUE),
+    sample_size = first(sample_size)) %>%
+  mutate(
+    p = frequency / sample_size,
+    se = sample_size * sqrt((p * (1 - p)) / sample_size)
+  ) %>%
+  select(-sample_size, -p)
+
+years <- unique(mental_health_en_qc$year[!mental_health_en_qc$year %in% c(2009, 2010)])
+  
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- mental_health_en_qc %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS/ENGLISHxQUEBECxAGExMENTALHEALTH_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+######################### Province X Age Table Generation #############################
+
+provinceXage <- cchs %>%
+  drop_na(ls, age_ranges) %>%
+  group_by(year, province, ls, age_ranges) %>%
+  summarise(frequency = sum(weight, na.rm = TRUE)) %>%
+  ungroup() %>% 
+  bind_rows(
+    group_by(., year, province, ls) %>%
+    summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+    mutate(age_ranges = "All ages")
+  ) %>%
+  bind_rows(
+      group_by(., year, age_ranges, ls) %>%
+      summarise(frequency = sum(frequency, na.rm = TRUE), .groups = 'drop') %>%
+      mutate(province = "Canada")
+  ) %>%
+  arrange(year, province, age_ranges, ls)
+
+years <- unique(provinceXage$year)
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- provinceXage %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Data/Tables/PROVxAGExLS Tables CCHS/PROVxAGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+canada <- provinceXage %>%
+filter(province == "Canada")
+
+for (yr in years) {
+  filename_year <- gsub("/", "", yr) # Remove "/" from yr
+  filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+  subset_data <- canada %>% filter(year == yr)
+  write.csv(subset_data, file = paste0("Data/Tables/AGExLS Tables CCHS/AGExLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+}
+
+##### Function for Generating Stratified Tables #######
+
+generate_stratified_tables <- function(data, file_path, stratify_by, final_stratification) {
+  # Ensure the stratify_by variable exists in the dataframe
+  if (!stratify_by %in% names(data)) {
+    stop("The stratify_by variable does not exist in the dataframe.")
+  }
+  
+  # Drop NA values for life satisfaction and the stratification variable
+  stratified_data <- data %>%
+    drop_na(ls, !!sym(stratify_by)) %>%
+    group_by(year, !!sym(stratify_by), ls) %>%
+    summarise(frequency = sum(weight, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup() %>%
+    rename(!!final_stratification := !!sym(stratify_by)) %>%
+    mutate(year = as.numeric(substr(year, nchar(year) - 3, nchar(year))))
+
+  # Get unique years
+  years <- unique(stratified_data$year)
+
+  # Loop through each year and save the corresponding subset
+  for (yr in years) {
+    filename_year <- gsub("/", "", yr) # Remove "/" from yr
+    filename_year <- gsub("20", "", filename_year, fixed = TRUE) # Remove "20" from yr
+    subset_data <- stratified_data %>% filter(year == yr)
+  
+    
+    # Create the folder if it doesn't exist
+    
+    if (!dir.exists(file_path)) {
+      dir.create(file_path, recursive = TRUE)
+    }
+    write.csv(subset_data, file = paste0(file_path, "/", toupper(gsub("_", "", final_stratification)), "xLS_", filename_year, "_CCHS.csv"), row.names = FALSE)
+  }
+}
+
+
+# Generate Stratified Tables (not by age)
+generate_stratified_tables(cchs, "Data/Tables/IMMIGRATIONxLS Tables CCHS", "time_in_canada", "immigration")
+generate_stratified_tables(cchs, "Data/Tables/MINORITYxLS Tables CCHS", "minority", "minority")
+generate_stratified_tables(cchs, "Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health", "mental_health")
+generate_stratified_tables(cchs, "Data/Tables/LANGUAGExLS Tables CCHS", "language", "language")
+generate_stratified_tables(cchs, "Data/Tables/SEXxLS Tables CCHS", "sex", "sex")
+generate_stratified_tables(cchs, "Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sex_diversity", "sexual_orientation")
+generate_stratified_tables(cchs %>% mutate(poverty = equiv_income <= 25252), "Data/Tables/POVERTYxLS Tables CCHS", "poverty", "poverty")
+generate_stratified_tables(cchs %>% mutate(home_owner = live_arrange %in% c(1,3,4,5) & own_home == "Owns home"), "Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner", "home_owner")
+generate_stratified_tables(cchs, "Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous", "indigenous")
+
+
+############################################################################################################
+######################################### RTRA Table Processing ############################################
+############################################################################################################
+
+# Import necessary libraries
+library(dplyr)
+library(purrr)
+library(readr)
+
+# Define the paths to the raw RTRA folders for different years
+raw_rtra_paths <- c(
+  "Data/Raw RTRA Data/CCHS201920_Frequencies",
+  "Data/Raw RTRA Data/CCHS2021_Frequencies",
+  "Data/Raw RTRA Data/CCHS2022_Frequencies"
+)
+
+# Define the seed strings based on the final part of the file name
+seed_strings <- c(
+  "HomeLS.csv" = "home_owner",
+  "IdentLS.csv" = "indigenous",
+  "ImmLS.csv" = "immigration",
+  "IncomLS.csv" = "poverty",
+  "LangLS.csv" = "language",
+  "MentLS.csv" = "mental_health",
+  "MinorLS.csv" = "minority",
+  "OrientLS.csv" = "sexual_orientation",
+  "SexLS.csv" = "sex",
+  "mental.csv" = "agexmentalhealth",
+  "mentalqc.csv" = "quebec-agexmentalhealth",
+  "mentalqcE.csv" = "english-quebec-agexmentalhealth",
+  "screen1.csv" = "screentime_wd",
+  "screen2.csv" = "screentime_we",
+  "Friends.csv" = "friends_sat"
+)
+
+# Function to assign seed strings to file names
+assign_seed_string <- function(file_paths, seed_strings) {
+  sapply(file_paths, function(file_path) {
+    final_part <- sub(".*CCHS[0-9]+", "", basename(file_path))
+    seed_string <- seed_strings[final_part]
+    return(seed_string)
+  })
+}
+
+mutate_based_on_seed_string <- function(data, seed_string, year) {
+  col <- sym(seed_string)
+  
+  if (seed_string == "indigenous" & year %in% c(2020,2021)) {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Yes",
+        !!col == 2 ~ "No",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "indigenous" & year %in% c(2022)) {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "No",
+        !!col == 2 ~ "Yes",
+        TRUE ~ NA_character_
+      ))
+  }else if (seed_string == "immigration") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col <= 9 ~ "0-9 years",
+        !!col > 9 & !!col < 996 ~ "10 or more years",
+        !!col == 996 ~ "Canadian born",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "language") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "English",
+        !!col == 2 ~ "French",
+        !!col == 3 ~ "English and French",
+        !!col == 4 ~ "Neither English nor French",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "mental_health") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col <= 5 ~ 5 - !!col,
+        TRUE ~ NA_integer_
+      ))
+  } else if (seed_string == "minority") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "White",
+        !!col == 2 ~ "Non-white",
+        !!col == 6 ~ "Non-white",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "sexual_orientation") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Heterosexual",
+        !!col == 2 ~ "Sexual minorities",
+        !!col == 3 ~ "Sexual minorities",
+        TRUE ~ NA_character_
+      ))
+  } else if (seed_string == "sex") {
+    data <- data %>%
+      mutate(!!col := case_when(
+        !!col == 1 ~ "Male",
+        !!col == 2 ~ "Female",
+        TRUE ~ NA_character_
+      ))
+  } else if (all(data[[col]] %in% c(0, 1))) {
+      data <- data %>%
+        mutate(!!col := as.logical(!!col))
+  } 
+
+  
+  return(data)
+}
+
+
+
+# Loop through each raw RTRA path
+purrr::walk(raw_rtra_paths, function(raw_rtra_path) {
+  # List all CSV files in the raw RTRA folders
+  rtra_files <- list.files(path = raw_rtra_path, pattern = "\\.csv$", full.names = TRUE)
+  
+  purrr::walk(rtra_files, function(file_path) {
+    final_part <- sub(".*CCHS[0-9]+", "", basename(file_path))
+    if (final_part %in% c("mental.csv", "mentalqc.csv", "screen1.csv", "screen2.csv", "Friends.csv", "IncomLS.csv")) {
+      return(NULL)
+    } else if (final_part == "mentalqcE.csv") {
+      df <- read.csv(file_path) %>%
+        mutate(year = as.numeric(paste0("20", sub(".*(\\d{2})\\D*$", "\\1", file_path)))) %>%
+        filter_all(all_vars(. != "")) %>%
+        rename(
+          mental_health = any_of(c("GEN_015", "GEN_05")),
+          quebec = "QUEBEC",
+          anglophone = "ANGLOPHONE",
+          age_ranges = "AGEGROUP"
+        ) %>%
+        mutate(age_ranges = case_when(
+          age_ranges == "15toless3" ~ "15-29",
+          age_ranges == "30toless4" ~ "30-44",
+          age_ranges == "45toless6" ~ "45-59",
+          age_ranges == "60andup" ~ "60+",
+          TRUE ~ NA_character_
+        )) %>%
+        select(
+          mental_health, 
+          quebec, 
+          anglophone, 
+          age_ranges, 
+          year, 
+          frequency = `X_COUNT_`,
+          se = `X_SE_`
+        ) %>%
+        drop_na(mental_health) %>%
+        mutate_based_on_seed_string("mental_health", df$year[1]) %>%
+        drop_na(mental_health)
+      
+      # Create the output directory if it doesn't exist
+      output_dir <- "Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS"
+      if (!dir.exists(output_dir)) {
+        dir.create(output_dir, recursive = TRUE)
+      }
+      
+      # Save the file
+      output_file <- paste0(output_dir, "/ENGLISHxQUEBECxAGExMENTALHEALTH_", substr(df$year[1], 3, 4), "_CCHS.csv")
+      write.csv(df, file = output_file, row.names = FALSE)
+      
+      return(NULL)
+    }
+    
+    print(file_path)
+    # Read the CSV file and process it using dplyr
+    df <- read.csv(file_path) %>%
+      rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
+      mutate(year = as.numeric(paste0("20", sub(".*(\\d{2})\\D*$", "\\1", file_path)))) %>%
+      filter(!is.na(as.numeric(.data$ls)) & as.numeric(.data$ls) <= 10)  # Use .data$ls to refer to the column
+
+    seed_string <- unname(seed_strings[final_part])
+    
+    # Rename the first column to the seed string and select necessary columns
+    df <- df %>%
+      rename(!!seed_string := 1) %>%
+      select(
+        !!seed_string, 
+        year, 
+        ls, 
+        frequency = `X_COUNT_`, 
+        lower_ci = `X_CILB_`, 
+        upper_ci = `X_CIUB_`, 
+        se = `X_SE_`
+      ) %>%
+      drop_na(!!seed_string) 
+
+    print(df$year)
+
+    df <- mutate_based_on_seed_string(df, seed_string, df$year[1]) %>%
+      drop_na(!!seed_string) %>%
+      group_by(!!sym(seed_string), ls) %>%
+    summarise(
+      frequency = sum(frequency, na.rm = TRUE),
+      se = sqrt(sum(se^2, na.rm = TRUE)),  # Calculate the standard error for the sum
+      lower_ci = frequency - 1.96 * se,  # Calculate the new lower confidence interval
+      upper_ci = frequency + 1.96 * se,   # Calculate the new upper confidence interval
+      year = first(year)
+    ) %>%
+    ungroup()
+
+    # Create the output directory if it doesn't exist
+    seed_string_no_underscore <- gsub("_", "", seed_string)
+    output_dir <- paste0("Data/Tables/", toupper(seed_string_no_underscore), "xLS Tables CCHS")
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
+    
+    # Save the file
+    output_file <- paste0(output_dir, "/", toupper(seed_string_no_underscore), "xLS_", substr(df$year[1], 3, 4), "_CCHS.csv")
+    write.csv(df, file = output_file, row.names = FALSE)
+  })
+})

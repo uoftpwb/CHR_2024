@@ -1,19 +1,20 @@
 # CHR 2024 Figure Generation
 # Author: Anthony McCanny
 # Date: May 28, 2024
-###############################################
+##############################################################################################################
 
-######### LOAD PACKAGES #########
+######################################## LOAD PACKAGES #######################################################
 
 library(tidyr)
 library(ggplot2)
 library(RColorBrewer)
 library(stringr)
 library(Hmisc)
+library(patchwork)
 library(dplyr)
 summarize <- dplyr::summarize
 
-######### DECLARE THEMES AND COLOURS #########
+######################################## DECLARE THEMES AND COLOURS ##########################################
 theme_chr <- function() {
   theme_minimal(base_family = "Open Sans") %+replace%
     theme(
@@ -42,139 +43,7 @@ four_tone_scale_colours <- c("#da7170", "#eea449", "#b6bd58", "#8a5c7c")
 six_tone_scale_colours <- c("#da7170", "#eea449", "#b6bd58", "#8a5c7c", "#006ba2", "#3ebcd2")
 
 
-######### DECLARE FUNCTIONS #########
-get_readable_label <- function(variable_name) {
-  # Create a named vector of readable labels from gallup_data_clean_young_lasso
-  readable_labels <- sapply(names(gallup_data_raw), function(column_name) {
-    label <- attr(gallup_data_raw[[column_name]], "Short Text")
-    if (is.null(label)) {
-      return(column_name)
-    } else {
-      return(label)
-    }
-  })
-
-  # Check if the variable is a factor by seeing if the base name without the last digit is in the list of variables turned into factors
-  base_variable_name <- sub("\\d$", "", variable_name)
-  is_factor <- base_variable_name %in% c(binary_columns, categorical_columns, "year", "province")
-  # Find the readable label that matches the variable name
-  readable_label <- readable_labels[names(readable_labels) == base_variable_name]
-  province_names <- c("10" = "Newfoundland and Labrador", "11" = "Prince Edward Island", "12" = "Nova Scotia", "13" = "New Brunswick", "24" = "Quebec", "35" = "Ontario", "46" = "Manitoba", "47" = "Saskatchewan", "48" = "Alberta", "59" = "British Columbia", "98" = "(DK)", "99" = "(Refused)")
-  religion_names <- c("0" = "Other", "1" = "Christianity: Roman Catholic", "2" = "Christianity: Protestant", "3" = "Christianity: Eastern Orthodox", "4" = "Islam/Muslim", "5" = "Islam/Muslim (Shiite)", "6" = "Islam/Muslim (Sunni)", "7" = "Druze", "8" = "Hinduism", "9" = "Buddhism", "10" = "Primal-indigenous", "11" = "Chinese Traditional Religion", "12" = "Sikhism", "13" = "Juche", "14" = "Spiritism", "15" = "Judaism", "16" = "Baha'i", "17" = "Jainism", "18" = "Shinto", "19" = "Cao Dai", "20" = "Zoroastrianism", "21" = "Tenrikyo", "22" = "Neo-Paganism", "23" = "Unitarian-Universalism", "24" = "Rastafarianism", "25" = "Scientology", "26" = "Secular/Nonreligious/Agnostic/Atheist/None", "28" = "Christian (not specified)", "29" = "Taoism/Daoism", "97" = "(No response)", "98" = "(DK)", "99" = "(Refused)")
-  if (is_factor) {
-      factor_level <- sub(".*?(\\d)$", "\\1", variable_name)
-      readable_label <- paste(readable_label, factor_level, sep = "_")
-  } else if (grepl("^province\\d{2}$", variable_name)) {
-      province_code <- substring(variable_name, 9, 10)
-      readable_label <- province_names[province_code]
-  } else if (startsWith(variable_name, "WP1233")) {
-      religion_code <- substring(variable_name, 7)
-      readable_label <- religion_code
-  } else if (variable_name == "(Intercept)") {
-      readable_label <- "Intercept"
-  } else {
-      readable_label <- readable_labels[names(readable_labels) == variable_name]
-  }
-  return(readable_label)
-}
-
-generate_trajectory_plot <- function(data=NULL, condition, true_label = " ", false_label = " ", single_line = FALSE, colour = 1, override_filename = FALSE, override_title = NULL, from_tables=FALSE, file_path = NULL) {
-  data_source_caption <- ""
-  
-  if (from_tables && !is.null(file_path)) {
-    data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
-      purrr::map_dfr(~ read.csv(.x) %>%
-        mutate(year = as.numeric(paste0("20", sub(paste0(file_path, "/.*_(.*)_CCHS.csv"), "\\1", .x))))) %>%
-      mutate(year = case_when(as.numeric(year) <= 2023 ~ as.numeric(year)+0.5,
-                                      year == 201516 ~ 2016,
-                                      year == 201718 ~ 2018,
-                                      year == 201920 ~ 2020),
-            ls = as.numeric(ls)) %>%
-      group_by(year) %>%
-      mutate(WGT = frequency / sum(frequency) * 65000) %>%
-      ungroup() %>%
-      drop_na(age_ranges)
-    data_source_caption <- "Data Source: Canadian Community Health Survey"
-  } 
-  
-  if (!is.null(data) && !from_tables) {
-    data_source_caption <- "Data Source: Gallup World Poll"
-  }
-  
-  if (!is.null(data) && from_tables) {
-    data_source_caption <- "Data Source: Gallup World Poll, Canadian Community Health Survey"
-  }
-  
-  plot_data <- data %>%
-    mutate(binary_var = if_else(eval(parse(text = condition)), true_label, false_label)) %>%
-    mutate(young = age_ranges == "15-29") %>%
-    group_by(year, binary_var) %>%
-    dplyr::summarize(
-      average_ls = weighted.mean(ls, WGT, na.rm = TRUE),
-      var_ls = wtd.var(ls, weights = WGT, na.rm = TRUE),
-      n = sum(WGT, na.rm=TRUE),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      se_ls = sqrt(var_ls / n),
-      ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
-      ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
-    ) %>%
-    drop_na(binary_var)
-
-  
-  # Automatically determine min_y and max_y based on the confidence intervals
-  min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE)*2)/2
-  max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE)*2)/2
-  y_breaks <- seq(min_y, max_y, by = 0.5)
-  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
-  
-  # Create the plot
-  age_group_ls_plot_gallup <- ggplot() +
-    geom_rect(data = rect_data, 
-              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
-              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE)
-  
-  if (single_line) {
-    age_group_ls_plot_gallup <- age_group_ls_plot_gallup +
-      geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper), fill = four_tone_scale_colours[colour], alpha = 0.2) +
-      geom_line(data = plot_data, aes(x = year, y = average_ls), color = four_tone_scale_colours[colour]) +
-      geom_point(data = plot_data, aes(x = year, y = average_ls), color = four_tone_scale_colours[colour])
-  } else {
-    age_group_ls_plot_gallup <- age_group_ls_plot_gallup +
-      geom_ribbon(data = plot_data, aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = binary_var), alpha = 0.2) +
-      geom_line(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var)) +
-      geom_point(data = plot_data, aes(x = year, y = average_ls, group = binary_var, color = binary_var))
-  }
-  
-  plot_title <- if (!is.null(override_title)) override_title else paste("Life Satisfaction for", tools::toTitleCase(true_label), "(Gallup)")
-  
-  age_group_ls_plot_gallup <- age_group_ls_plot_gallup +
-    labs(title = plot_title,
-         y = "Average Life Evaluation",
-         color = "Group",
-         caption = data_source_caption) +
-    theme_chr() +
-    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
-    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE)), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)), ceiling(max(plot_data$year, na.rm = TRUE))-1, by = 1), ""), 
-                        expand = c(0, 0)) +
-    scale_color_manual(values = setNames(c(six_tone_scale_colours[1], six_tone_scale_colours[3]), c(true_label, false_label)))
-  # Print the plot
-  print(age_group_ls_plot_gallup)
-  
-  # Save the plot in different formats
-  true_label_formatted <- tolower(gsub("[[:punct:]]", "", gsub(" ", "_", true_label)))
-  base_filename <- if (is.character(override_filename)) override_filename else paste0("trajectory_by_", true_label_formatted, "_Canada_Gallup")
-  
-  ggsave(paste0("Output/Plots/Trajectory/PNG/", base_filename, ".png"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Plots/Trajectory/JPG/", base_filename, ".jpg"), plot = age_group_ls_plot_gallup, width = 9, height = 3, dpi = 300)
-  ggsave(paste0("Output/Plots/Trajectory/SVG/", base_filename, ".svg"), plot = age_group_ls_plot_gallup + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-
-  return(plot_data)
-}
-
-######## LOAD GALLUP DATA #########
+######################################## LOAD GALLUP DATA ##########################################
 gallup <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
   filter(COUNTRYNEW == "Canada") %>%
   select(year = YEAR_WAVE, ls = WP16, age = WP1220, WGT, date = WP4, province = REGION2_CAN) %>%
@@ -194,10 +63,7 @@ gallup <- readRDS("Data/Gallup/GWP_cleaned_CHR2024_240430.rds") %>%
             TRUE ~ NA_character_))
 
 
-
-
-
-######## LOAD CCHS DATA #########
+######################################## LOAD CCHS DATA ##########################################
 # Read all the PUMF CSV files and combine them into one dataframe
 PUMF_list <- list.files(path = "Data/Tables/PROVxAGExLS Tables CCHS", pattern = "*.csv", full.names = TRUE)
 provincePUMF <- PUMF_list %>%
@@ -244,11 +110,12 @@ canada <- province %>%
   filter(province == "Canada")
 
             
-######## GENERATE PLOTS #########
+###########################################################################################################
+########################################### TRAJECTORY PLOTS ##############################################
+###########################################################################################################
 
+################################ CANADA-WIDE TRAJECTORY PLOTS ################################
 
-#### GENERATE TRAJECTORY PLOTS #####
-# Generate the first plot using Gallup data
 gallup_filename <- "gallup_ls_trajectory_canada"
 gallup_title <- "Evaluations of Life in Canada"
 
@@ -367,7 +234,6 @@ combined_trajectory_ls <- ggplot() +
                     expand = c(0, 0)) +
   scale_color_manual(values = six_tone_scale_colours[c(5, 1)]) +
   scale_fill_manual(values = six_tone_scale_colours[c(5, 1)])
-
 # Print the combined plot
 print(combined_trajectory_ls)
 
@@ -376,7 +242,60 @@ ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined
 ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
 ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
-###### AGE GROUP TRAJECTORY PLOTS ######
+################################ LOAD CSS DATA ################################
+
+CSS_list <- list.files(path = "Data/CSS RTRA", pattern = "^PROVxAGExLS.*\\.csv$", full.names = TRUE)
+provinceXageCSS <- CSS_list %>%  # Start a chain of commands using the file_list vector
+  purrr::map_dfr(~read.csv(.x) %>%  # Read each file in the list into a dataframe and row-bind them together
+    rename_with(~if_else(.x %in% c("LSM_01", "GEN_010"), "ls", .x)) %>%  # Rename columns 'LSM_01' and 'GEN_010' to 'ls'
+    mutate(year = paste0("20", sub("Data/CSS RTRA/PROVxAGExLS_(.*)_CSS.csv", "\\1", .x)))) %>%  # Extract the year from the filename and add it as a new column
+  mutate(province = case_when(
+    PR == 10 ~ "Newfoundland and Labrador",
+    PR == 11 ~ "Prince Edward Island",
+    PR == 12 ~ "Nova Scotia",
+    PR == 13 ~ "New Brunswick",
+    PR == 24 ~ "Quebec",
+    PR == 35 ~ "Ontario",
+    PR == 46 ~ "Manitoba",
+    PR == 47 ~ "Saskatchewan",
+    PR == 48 ~ "Alberta",
+    PR == 59 ~ "British Columbia",
+    PR == 60 ~ "Yukon",
+    PR == 61 ~ "Northwest Territories",
+    PR == 62 ~ "Nunavut",
+    is.na(PR) ~ "Canada",
+    TRUE ~ NA_character_
+  )) %>%
+  filter(!is.na(ls) & ls <= 10) %>%  # Drop rows with NA in 'ls' or 'ls' values higher than 10
+  mutate(AGEGROUP = case_when(
+    AGEGROUP == 2 ~ "15-29",
+    AGEGROUP == 3 ~ "30-44",
+    AGEGROUP == 4 ~ "45-59",
+    AGEGROUP == 5 ~ "60+",
+    TRUE ~ "All ages")) %>%
+  drop_na(AGEGROUP) %>%
+  mutate(year = case_when(
+    year == "2021W1" ~ 2021.25,
+    year == "2021W2" ~ 2021.50,
+    year == "2021W3" ~ 2021.75,
+    year == "2021W4" ~ 2022.00,
+    year == "2022W1" ~ 2022.5,
+    year == "2022W2" ~ 2022.75,
+    year == "2022W3" ~ 2023,
+    year == "2023W1" ~ 2023.5,
+    year == "2023W2" ~ 2023.75
+  )) %>%
+  select(province, year, age_ranges = AGEGROUP, ls, frequency = X_COUNT_)
+
+# Format data
+canadaXageCSS_avg_ls <- provinceXageCSS %>%
+  filter(province == "Canada") %>%
+  group_by(year, age_ranges) %>%
+  mutate(proportion = frequency / sum(frequency)) %>%    
+  mutate(average_ls = sum(proportion * as.numeric(ls))) %>%
+  filter(age_ranges != "All ages") 
+
+################################ AGE GROUP TRAJECTORY PLOTS ################################
 
 # Generate the first plot using Gallup data
 gallup_filename <- "gallup_ls_trajectory_canada_by_age"
@@ -511,8 +430,110 @@ ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined
 ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_trajectory_ls, width = 9, height = 3, dpi = 300)
 ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_trajectory_ls + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
+### Combined CCHS, CSS, Gallup Age Trajectory Plot ###
 
-###### AGE-STANDARDIZED PROVINCIAL MAP #######
+# Calculate standard error and confidence intervals for CSS data
+canadaXageCSS_avg_ls <- canadaXageCSS_avg_ls %>%
+  group_by(year, age_ranges) %>%
+  mutate(
+    var_ls = wtd.var(ls, weights = frequency, na.rm = TRUE),
+    n = sum(frequency, na.rm = TRUE),
+    se_ls = sqrt(var_ls / n),
+    ci_lower = average_ls - qt(0.975, df = n - 1) * se_ls,
+    ci_upper = average_ls + qt(0.975, df = n - 1) * se_ls
+  ) %>%
+  ungroup()
+
+# Combine CCHS, CSS, and Gallup data
+combined_plot_data_all <- bind_rows(
+  combined_plot_data,
+  canadaXageCSS_avg_ls %>% 
+    mutate(source = "Life Satisfaction - CSS") %>%
+    select(province, year, age_ranges, average_ls, ci_lower, ci_upper, source)
+)
+
+min_y_combined <- floor(min(combined_plot_data_all$ci_lower, na.rm = TRUE) * 2) / 2
+max_y_combined <- ceiling(max(combined_plot_data_all$ci_upper, na.rm = TRUE) * 2) / 2
+y_breaks_combined <- seq(min_y_combined, max_y_combined, by = 0.5)
+rect_data_combined <- data.frame(ymin = head(y_breaks_combined, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks_combined, -1)[c(TRUE, FALSE)])
+
+
+# Create the combined plot
+combined_trajectory_ls_all <- ggplot() +
+  geom_rect(data = rect_data_combined, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
+  geom_vline(xintercept = c(2015, 2022), linetype = "dashed", color = "black") +
+  # Gallup data
+  geom_ribbon(data = combined_plot_data_all %>% filter(source == "Life Evaluation - Gallup"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.1) +
+  geom_line(data = combined_plot_data_all %>% filter(source == "Life Evaluation - Gallup"), 
+            aes(x = year, y = average_ls, color = age_ranges, linetype = source)) +
+  geom_point(data = combined_plot_data_all %>% filter(source == "Life Evaluation - Gallup"), 
+             aes(x = year, y = average_ls, color = age_ranges, shape = source), size = 2) +
+  # CCHS data (separated by time periods)
+  geom_ribbon(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CCHS" & year >= 2009 & year <= 2015), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2) +
+  geom_line(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CCHS" & year >= 2009 & year <= 2015), 
+            aes(x = year, y = average_ls, color = age_ranges, linetype = source)) +
+  geom_point(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CCHS"), 
+             aes(x = year, y = average_ls, color = age_ranges, shape = source), size = 2) +
+  geom_ribbon(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CCHS" & year >= 2015 & year <= 2022), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2) +
+  geom_line(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CCHS" & year >= 2015 & year <= 2022), 
+            aes(x = year, y = average_ls, color = age_ranges, linetype = source)) +
+  # CSS data
+  geom_ribbon(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CSS"), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2) +
+  geom_line(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CSS"), 
+            aes(x = year, y = average_ls, color = age_ranges, linetype = source)) +
+  geom_point(data = combined_plot_data_all %>% filter(source == "Life Satisfaction - CSS"), 
+             aes(x = year, y = average_ls, color = age_ranges, shape = source), size = 3) +
+  labs(title = "Life Evaluations and Satisfaction in Canada",
+       y = "Average Response",
+       color = "Age Range",
+       fill = "Age Range",
+       linetype = "Data Source",
+       shape = "Data Source",
+       caption = "Data Source: Gallup World Poll, Canadian Community Health Survey, and Canadian Social Survey") +
+  theme_chr() +
+  theme(aspect.ratio = 1/3, 
+        plot.background = element_rect(fill = background_colour, color = background_colour), 
+        axis.title.y = element_text(angle = 90), 
+        legend.key.width = unit(1, "cm"), 
+        plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +
+  scale_y_continuous(limits = c(min_y_combined, max_y_combined), breaks = y_breaks_combined) +
+  scale_x_continuous(limits = c(floor(min(combined_plot_data_all$year, na.rm = TRUE)), 
+                                ceiling(max(combined_plot_data_all$year, na.rm = TRUE))), 
+                     breaks = seq(floor(min(combined_plot_data_all$year, na.rm = TRUE)), 
+                                  ceiling(max(combined_plot_data_all$year, na.rm = TRUE)), by = 1), 
+                     labels = c(seq(floor(min(combined_plot_data_all$year, na.rm = TRUE)), 
+                                    ceiling(max(combined_plot_data_all$year, na.rm = TRUE))-1, by = 1), ""), 
+                     expand = c(0, 0)) +
+  scale_color_manual(values = four_tone_scale_colours) +
+  scale_fill_manual(values = four_tone_scale_colours) +
+  scale_linetype_manual(values = c("dotted", "dashed", "solid")) +
+  scale_shape_manual(values = c(16, 17, 18))
+
+# Print the combined plot
+print(combined_trajectory_ls_all)
+
+# Save the plot
+base_filename <- "combined_ls_age_trajectory_all_sources"
+ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), 
+       plot = combined_trajectory_ls_all + theme(plot.background = element_rect(fill = "transparent", color = NA)), 
+       width = 12, height = 4, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), 
+       plot = combined_trajectory_ls_all, 
+       width = 12, height = 4, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), 
+       plot = combined_trajectory_ls_all + theme(plot.background = element_rect(fill = "transparent", color = NA)), 
+       width = 12, height = 4, dpi = 300, bg = "transparent")
+
+
+
+
+######################################## PROVINCIAL MAP ##########################################
 
 library(sf)
 library(canadianmaps)
@@ -522,7 +543,7 @@ library(ggplot2)
 # Get the provincial boundary data
 data("PROV")
 
-years_to_plot <- c(2009, 2018, 2022)
+years_to_plot <- c(2009, 2018, 2021)
 province_map_data <- province %>%
   mutate(year = if_else(year==201718, 2018, year)) %>%
   filter(year %in% years_to_plot) %>%
@@ -535,16 +556,16 @@ territories_2009 <- province_map_data %>%
   mutate(province = list(c("Yukon", "Northwest Territories", "Nunavut"))) %>%
   unnest(province)
 
-# Handle the special case for territories in 2022
-territories_2022 <- tibble(
+# Handle the special case for territories in 2021
+territories_2021 <- tibble(
   province = c("Yukon", "Northwest Territories", "Nunavut"),
-  year = 2022,
-  weighted_avg_ls = NA_real_
+  year = 2021,
+  weighted_avg_ls = 5
 )
 # Combine the modified data
 province_map_data <- province_map_data %>%
   filter(!(year == 2009 & province == "Yukon/Northwest Territories/Nunavut")) %>%
-  bind_rows(territories_2009, territories_2022)
+  bind_rows(territories_2009, territories_2021)
 
 # Merge the weighted averages with the provincial boundary data
 PROV <- PROV %>%
@@ -575,13 +596,13 @@ ggsave("Output/Final Plots/PNG/province_map.png", plot = map_plot, width = 10, h
 ggsave("Output/Final Plots/JPG/province_map.jpg", plot = map_plot, width = 10, height = 15, dpi = 300)
 ggsave("Output/Final Plots/SVG/province_map.svg", plot = map_plot, width = 10, height = 15, dpi = 300)
 
-# Duplicate territories in 2009, duplicate territories with NA in 2022, 
-# Remove labels
-# Remove y axis labels
+
+###########################################################################################################
+########################################### DEMOGRAPHIC PLOTS #############################################
+###########################################################################################################
 
 
-######## DEMOGRAPHIC PLOTS #########
-
+##################################### DEMOGRAPHIC DISTRIBUTION PLOTS ######################################
 
 demographic_distribution_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title, year_choice = 2022) {
   # Import Data
@@ -653,50 +674,38 @@ demographic_distribution_plot <- function(file_path, condition1, condition2, gro
 
   # Save plot
   group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
-  ggsave(paste0("Output/Final Plots/PNG/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/JPG/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/SVG/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+  # ggsave(paste0("Output/Final Plots/PNG/", group1_label_sanitized, "_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/JPG/", group1_label_sanitized, "_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/SVG/", group1_label_sanitized, "_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
 
   return(demographic_plot)
 }
 
-file_path <- "Data/Tables/INDIGENOUSxLS Tables CCHS"
-condition1 <- "indigenous == 'Yes'"
-condition2 <- "indigenous == 'No'"
-group1_label <- "Indigenous"
-group2_label <- "Non-Indigenous"
-plot_title <- "Life Satisfaction of Canadians by Self-Perceived Mental Health in 2022"
+# demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "First Nation, Metis and Inuit", "Other Canadians", "First Nation, Metis and Inuit Life Satisfaction in 2022")
+
+# # CHANGE year_choice VARIABLE IN THIS CALL IF UPDATED DATA IS RECEIVED:
+# demographic_distribution_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada in 2017-2018", year_choice = 2018)
+
+# demographic_distribution_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health in 2022")
+
+# demographic_distribution_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English in 2022")
+
+# demographic_distribution_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth in 2022")
+
+# demographic_distribution_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada in 2022")
+
+# demographic_distribution_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians in 2022")
+
+# demographic_distribution_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada in 2022")
+
+# demographic_distribution_plot("Data/Tables/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekend < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
+
+# demographic_distribution_plot("Data/Tables/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
+
+# demographic_distribution_plot("Data/Tables/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
 
 
-demographic_distribution_plot("Data/Tables/INDIGENOUSxLS Tables CCHS", "indigenous == 'Yes'", "indigenous == 'No'", "First Nation, Metis and Inuit", "Other Canadians", "First Nation, Metis and Inuit Life Satisfaction in 2022")
-
-# CHANGE year_choice VARIABLE IN THIS CALL IF UPDATED DATA IS RECEIVED:
-demographic_distribution_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities in Canada in 2017-2018", year_choice = 2018)
-
-demographic_distribution_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health in 2022")
-
-demographic_distribution_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English in 2022")
-
-demographic_distribution_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth in 2022")
-
-demographic_distribution_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada in 2022")
-
-demographic_distribution_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians in 2022")
-
-demographic_distribution_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada in 2022")
-
-demographic_distribution_plot("Data/Tables/SCREENTIMEWExLS Tables CCHS", "screentime_weekend %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekend < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekends")
-
-demographic_distribution_plot("Data/Tables/SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of Canadians by Screentime on Weekdays")
-
-demographic_distribution_plot("Data/Tables/YOUTH-SCREENTIMEWDxLS Tables CCHS", "screentime_weekday %in% c('6 hours to less than 8 hours', '8 hours or more per day')", "screentime_weekday < '6 hours'", "6 hours or more", "Less than 6 hours", "Life Satisfaction of 15-29 Year Old Canadians by Screentime on Weekdays")
-
-
-
-
-###### Demographic Trajectory Plots ######
-
-
+##################################### DEMOGRAPHIC TRAJECTORY PLOTS #####################################
 
 demographic_trajectory_plot <- function(file_path, condition1, condition2, group1_label, group2_label, plot_title, override_filename = FALSE, include_title = TRUE, show_legend = TRUE) {
   data_source_caption <- "Data Source: Canadian Community Health Survey"
@@ -768,26 +777,28 @@ demographic_trajectory_plot <- function(file_path, condition1, condition2, group
   group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
   base_filename <- if (is.character(override_filename)) override_filename else paste0(group1_label_sanitized, "_trajectory")
   
-  ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
-  ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
+  # ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
   return(trajectory_plot)
 }
 
-demographic_trajectory_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities over Time")
+# demographic_trajectory_plot("Data/Tables/MINORITYxLS Tables CCHS", "minority == 'Non-white'", "minority == 'White'", "Visible Minority", "Other Canadians", "Life Satisfaction of Visible Minorities over Time")
 
-demographic_trajectory_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health over Time")
+# demographic_trajectory_plot("Data/Tables/MENTALHEALTHxLS Tables CCHS", "mental_health <= 1", "mental_health > 1", "Poor or Fair Mental Health", "Good or Better Mental Health", "Life Satisfaction of Canadians by Self-Perceived Mental Health over Time")
 
-demographic_trajectory_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English over Time")
+# demographic_trajectory_plot("Data/Tables/LANGUAGExLS Tables CCHS", "language %in% c('French', 'English and French')", "language == 'English'", "French Speakers", "Other Canadians", "Life Satisfaction of Canadians who Learned French before English over Time")
 
-demographic_trajectory_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth over Time")
+# demographic_trajectory_plot("Data/Tables/SEXxLS Tables CCHS", "sex == 'Female'", "sex == 'Male'", "Female", "Male", "Life Satisfaction of Canadians by Sex at Birth over Time")
 
-demographic_trajectory_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada over Time")
+# demographic_trajectory_plot("Data/Tables/SEXUALORIENTATIONxLS Tables CCHS", "sexual_orientation == 'Sexual minorities'", "sexual_orientation == 'Heterosexual'", "Sexual Minorities", "Heterosexual Canadians", "Life Satisfaction of Sexual Minorities in Canada over Time")
 
-demographic_trajectory_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians over Time")
+# demographic_trajectory_plot("Data/Tables/POVERTYxLS Tables CCHS", "poverty == TRUE", "poverty == FALSE", "Low Income (<$25,252)", "Other Canadians", "Life Satisfaction of Low Income Canadians over Time")
 
-demographic_trajectory_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada over Time")
+# demographic_trajectory_plot("Data/Tables/HOMEOWNERxLS Tables CCHS", "home_owner == FALSE", "home_owner == TRUE", "Non-Homeowners", "Homeowners", "Life Satisfaction of Non-homeowners in Canada over Time")
 
+
+##################################### DEMOGRAPHIC COMBINED PLOTS #####################################
 
 generate_combined_plot <- function(file_path, group1_condition, group2_condition, group1_label, group2_label, distribution_plot_title, trajectory_plot_title, include_title = TRUE, show_legend = TRUE, override_filename = NULL, year_choice = 2022) {
   # Ensure required packages are loaded
@@ -809,12 +820,12 @@ generate_combined_plot <- function(file_path, group1_condition, group2_condition
   group1_label_sanitized <- tolower(gsub(" ", "_", group1_label))
   base_filename <- if (is.character(override_filename)) override_filename else paste0(group1_label_sanitized, "_demographic_combined")
   
-  print(combined_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)))
+  print(combined_plot & theme(plot.background = element_rect(fill = "transparent", color = NA)))
 
   # Save the combined plot in different formats
-  ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/PNG/", base_filename, ".png"), plot = combined_plot & theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 9, dpi = 300, bg = "transparent")
   ggsave(paste0("Output/Final Plots/JPG/", base_filename, ".jpg"), plot = combined_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)), width = 8, height = 9, dpi = 300)
-  ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+  ggsave(paste0("Output/Final Plots/SVG/", base_filename, ".svg"), plot = combined_plot & theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 9, dpi = 300, bg = "transparent")
 }
 
 generate_combined_plot(
@@ -829,7 +840,6 @@ generate_combined_plot(
   include_title = FALSE
 )
 
-
 generate_combined_plot(
   file_path = "Data/Tables/MINORITYxLS Tables CCHS",
   group1_condition = "minority == 'Non-white'",
@@ -839,8 +849,7 @@ generate_combined_plot(
   distribution_plot_title = "Distribution and Trend of Life Satisfaction by Visible Minority Status",
   trajectory_plot_title = "Life Satisfaction of Visible Minorities over Time",
   show_legend = FALSE,
-  include_title = FALSE,
-  year_choice = 2018
+  include_title = FALSE
 )
 
 generate_combined_plot(
@@ -916,11 +925,9 @@ generate_combined_plot(
 )
 
 
+######################################## IMMIGRATION PLOTS ##########################################
 
-
-
-############# Immigration Plots ##################
-
+################################### IMMIGRATION DISTRIBUTION PLOT ###################################
   file_path <- "Data/Tables/IMMIGRATIONxLS Tables CCHS"
   plot_title <- "Distribution and Trend of Life Satisfaction by Time in Canada"
 
@@ -975,7 +982,7 @@ generate_combined_plot(
           y = "Proportion",
           group = "Time in Canada") +
       theme_chr() +
-      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 10))) + 
+      theme(aspect.ratio = 1, legend.position = "right", axis.title.x = element_text(margin = margin(t = 5))) + 
       scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0), limits = c(min_y, max_y)) +
       scale_fill_manual(values = c(six_tone_scale_colours[1], six_tone_scale_colours[2], six_tone_scale_colours[5]), guide = FALSE) +
       scale_color_identity(name = "Time in Canada", labels = c("0-9 years", "10 or more years", "Canadian born"), 
@@ -988,10 +995,10 @@ generate_combined_plot(
           inherit.aes = FALSE, show.legend = FALSE)
   print(demographic_plot)
 
-  # Save plot
-  ggsave(paste0("Output/Final Plots/PNG/immigration_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/JPG/immigration_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/SVG/immigration_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
+  # Save plot -- Commented out so that only combined versions of plots are saved
+  # ggsave(paste0("Output/Final Plots/PNG/immigration_distribution.png"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/JPG/immigration_distribution.svg"), plot = demographic_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 6, dpi = 300, bg = "transparent")
+  # ggsave(paste0("Output/Final Plots/SVG/immigration_distribution.jpg"), plot = demographic_plot, width = 8, height = 6, dpi = 300)
 
   # Calculate the percentage of respondents in >= 2021 that fall into each of the three categories
   percentage_data <- plot_data %>%
@@ -1003,7 +1010,8 @@ generate_combined_plot(
   # Print the percentage data
   print(percentage_data)
 
-########### TREND PLOT FOR IMMIGRATION ###############
+
+###################################### IMMIGRATION TREND PLOT #######################################
 
 data <- list.files(path = file_path, pattern = "*.csv", full.names = TRUE) %>%
   purrr::map_dfr(~ read.csv(.x) %>%
@@ -1041,6 +1049,7 @@ min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
 max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
 y_breaks <- seq(min_y, max_y, by = 0.5)
 rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
+show_legend <- FALSE
 
 # Create the plot
 trajectory_plot <- ggplot() +
@@ -1078,7 +1087,7 @@ trajectory_plot <- ggplot() +
         y = "Average Life Satisfaction",
         color = "Group",
         fill = "Group",
-        caption = data_source_caption) +
+        caption = "Data Source: Canadian Community Health Survey") +
   theme_chr() +
   theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
   scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
@@ -1096,210 +1105,93 @@ combined_immigration_plot <- free(demographic_plot) + trajectory_plot + plot_lay
 print(combined_immigration_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)))
 
 # Save the combined plot in different formats
-ggsave(paste0("Output/Final Plots/PNG/immigration_distribution_combined.png"), plot = combined_immigration_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/immigration_distribution_combined.png"), plot = combined_immigration_plot & theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 9, dpi = 300, bg = "transparent")
 ggsave(paste0("Output/Final Plots/JPG/immigration_distribution_combined.jpg"), plot = combined_immigration_plot & theme(plot.background = element_rect(fill = background_colour, color = NA)), width = 8, height = 9, dpi = 300)
-ggsave(paste0("Output/Final Plots/SVG/immigration_distribution_combined.svg"), plot = combined_immigration_plot, width = 8, height = 9, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/SVG/immigration_distribution_combined.svg"), plot = combined_immigration_plot & theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 8, height = 9, dpi = 300, bg = "transparent")
 
 
-########################### MENTAL HEALTH PLOTS ############################
 
-data_source_caption <- "Data Source: Canadian Community Health Survey"
+###########################################################################################################
+########################################### MENTAL HEALTH PLOTS ###########################################
+###########################################################################################################
 
+################################### MENTAL HEALTH AGE RANGE PLOT ####################################
+
+# Load and process data from CSV files
 data <- list.files(path = "Data/Tables/ENGLISHxQUEBECxAGExMENTALHEALTH Tables CCHS", pattern = "*.csv", full.names = TRUE) %>%
   purrr::map_dfr(~ read.csv(.x) %>%
-    mutate(year = as.numeric(paste0("20", sub(".*_(.*)_CCHS.csv", "\\1", .x))))) %>%
-  mutate(year = case_when(year %in% c(2016, 2018, 2020) ~ year,
+    mutate(year = as.numeric(paste0("20", sub(".*_(.*)_CCHS.csv", "\\1", .x))))) %>%  # Extract year from filename and convert to numeric
+  mutate(year = case_when(year %in% c(2016, 2018, 2020) ~ year,  # Adjust year for specific cases
                           year <= 2023 ~ year + 0.5),
-         mental_health = as.numeric(mental_health)) %>%
+         mental_health = as.numeric(mental_health)) %>%  # Convert mental_health to numeric
   group_by(year) %>%
-  mutate(WGT = frequency / sum(frequency) * 65000) %>%
+  mutate(WGT = frequency / sum(frequency) * 65000) %>%  # Calculate weights
   ungroup()
 
+# Summarize and calculate statistics for plot data
 plot_data <- data %>%
-  drop_na(age_ranges) %>%
-  group_by(year, age_ranges) %>%
+  drop_na(age_ranges) %>%  # Drop rows with NA in age_ranges
+  group_by(year, age_ranges) %>%  # Group by year and age_ranges
   dplyr::summarize(
-    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
-    n = sum(WGT, na.rm = TRUE),
-    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
+    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),  # Calculate weighted mean of mental_health
+    n = sum(WGT, na.rm = TRUE),  # Sum of weights
+    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),  # Calculate weighted variance of mental_health
     .groups = "drop"
   ) %>%
   mutate(
-    se_mh = sqrt(var_mh / n),
-    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
-    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
+    se_mh = sqrt(var_mh / n),  # Calculate standard error
+    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,  # Calculate lower bound of confidence interval
+    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh  # Calculate upper bound of confidence interval
   )
 
-plot_data_quebec <- data %>%
-  filter(quebec == 1) %>%
-  drop_na(age_ranges) %>%
-  group_by(year, age_ranges) %>%
-  dplyr::summarize(
-    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
-    n = sum(WGT, na.rm = TRUE),
-    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    se_mh = sqrt(var_mh / n),
-    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
-    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
-  )
+data_source_caption <- "Data Source: Canadian Community Health Survey"  # Data source caption
 
-plot_data_quebec_anglophone <- data %>%
-  filter(quebec == 1 & anglophone == 1) %>%
-  drop_na(age_ranges) %>%
-  group_by(year, age_ranges) %>%
-  dplyr::summarize(
-    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
-    n = sum(WGT, na.rm = TRUE),
-    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    se_mh = sqrt(var_mh / n),
-    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
-    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
-  )
+# Automatically determine min_y and max_y based on the confidence intervals
+min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
+max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
+y_breaks <- seq(min_y, max_y, by = 0.5)
+rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
 
-  plot_data_comparison <- data %>%
-  mutate(queb_franc = ifelse(is.na(quebec) | is.na(anglophone), NA, quebec == 1 & anglophone == 0),
-         young = ifelse(is.na(age_ranges) , NA, age_ranges %in% c("15-29"))) %>%
-  drop_na(age_ranges) %>%
-  group_by(year, queb_franc, young) %>%
-  dplyr::summarize(
-    average_mh = weighted.mean(mental_health, WGT, na.rm = TRUE),
-    n = sum(WGT, na.rm = TRUE),
-    var_mh = wtd.var(mental_health, weights = WGT, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    se_mh = sqrt(var_mh / n),
-    ci_lower = average_mh - qt(0.975, df = n - 1) * se_mh,
-    ci_upper = average_mh + qt(0.975, df = n - 1) * se_mh
-  )
-  
+# Create the mental health trajectory plot
+mental_health_trajectory <- ggplot() +
+  geom_rect(data = rect_data, 
+            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
+            fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +  # Add background rectangles
+  geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +  # Add dashed line for 2015
+  geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +  # Add dashed line for 2022
+  geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +  # Add confidence interval ribbons for 2009-2015
+  geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
+            aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +  # Add lines for 2009-2015
+  geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+              aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +  # Add confidence interval ribbons for 2015-2022
+  geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
+            aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +  # Add lines for 2015-2022
+  geom_point(data = plot_data, 
+             aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +  # Add points for all years
+  labs(title = "Self-Reported Mental Health by Age Range",
+       y = "Average Mental Health",
+       color = "Age Range",
+       fill = "Age Range",
+       caption = data_source_caption) +  # Add labels
+  theme_chr() +
+  theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
+  scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +  # Set y-axis limits and breaks
+  scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
+                      expand = c(0, 0)) +  # Set x-axis limits and breaks
+  scale_color_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges))) +  # Set color scale
+  scale_fill_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges)))  # Set fill scale
+
+# Print the plot
+print(mental_health_trajectory)
+
+# Save the plot in different formats
+ggsave("Output/Final Plots/PNG/mental_health_trajectory.png", plot = mental_health_trajectory + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave("Output/Final Plots/JPG/mental_health_trajectory.jpg", plot = mental_health_trajectory, width = 9, height = 3, dpi = 300)
+ggsave("Output/Final Plots/SVG/mental_health_trajectory.svg", plot = mental_health_trajectory + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 
-# Function to create and save plots
-create_and_save_plot <- function(plot_data, title, filename_suffix) {
-  # Automatically determine min_y and max_y based on the confidence intervals
-  min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
-  max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
-  y_breaks <- seq(min_y, max_y, by = 0.5)
-  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
-
-
-  trajectory_plot <- ggplot() +
-    geom_rect(data = rect_data, 
-              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
-              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
-    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
-    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015), 
-              aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
-    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = age_ranges), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022), 
-              aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
-    geom_point(data = plot_data, 
-               aes(x = year, y = average_mh, group = age_ranges, color = age_ranges), show.legend = TRUE) +
-    labs(title = title,
-         y = "Average Mental Health",
-         color = "Age Range",
-         fill = "Age Range",
-         caption = data_source_caption) +
-    theme_chr() +
-    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
-    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
-                        expand = c(0, 0)) +
-    scale_color_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges))) +
-    scale_fill_manual(values = setNames(six_tone_scale_colours[1:4], unique(plot_data$age_ranges)))
-  # Print the plot
-  print(trajectory_plot)
-  # Save the plot in different formats
-  ggsave(paste0("Output/Final Plots/PNG/", filename_suffix, "_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  ggsave(paste0("Output/Final Plots/JPG/", filename_suffix, "_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
-  ggsave(paste0("Output/Final Plots/SVG/", filename_suffix, "_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-}
-
-# Function to create and save plots
-mental_health_comparison_plot <- function(plot_data, title, filename_suffix) {  
-
-  min_y <- floor(min(plot_data$ci_lower, na.rm = TRUE) * 2) / 2
-  max_y <- ceiling(max(plot_data$ci_upper, na.rm = TRUE) * 2) / 2
-  y_breaks <- seq(min_y, max_y, by = 0.5)
-  rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
-
-  trajectory_plot <- ggplot() +
-    geom_rect(data = rect_data, 
-              aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
-              fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +
-    geom_segment(aes(x = 2015, xend = 2015, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
-    geom_segment(aes(x = 2022, xend = 2022, y = min_y, yend = max_y), linetype = "dashed", color = "gray") +
-    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == TRUE), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == TRUE), 
-              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
-    geom_ribbon(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == FALSE), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2009 & year <= 2015 & queb_franc == FALSE), 
-              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
-    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == TRUE), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == TRUE), 
-              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
-    geom_ribbon(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == FALSE), 
-                aes(x = year, ymin = ci_lower, ymax = ci_upper, fill = young), alpha = 0.2, show.legend = TRUE) +
-    geom_line(data = plot_data %>% filter(year >= 2015 & year <= 2022 & queb_franc == FALSE), 
-              aes(x = year, y = average_mh, color = young, linetype = queb_franc), show.legend = TRUE) +
-    geom_point(data = plot_data, 
-               aes(x = year, y = average_mh, color = young, shape = queb_franc), show.legend = TRUE) +
-    labs(title = title,
-         y = "Average Mental Health",
-         color = "Group",
-         fill = "Group",
-         linetype = "Region",
-         shape = "Region",
-         caption = data_source_caption) +
-    theme_chr() +
-    theme(aspect.ratio = 1/3, plot.background = element_rect(fill = background_colour, color = background_colour), axis.title.y = element_text(angle = 90), legend.key.width = unit(1, "cm"), plot.caption = element_text(hjust = 0, size = 8, face = "italic")) +  # Adjusted legend key width
-    scale_y_continuous(limits = c(min_y, max_y), breaks = y_breaks) +
-    scale_x_continuous(limits = c(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01)), breaks = seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01), by = 1), labels = c(seq(floor(min(plot_data$year, na.rm = TRUE)-0.01), ceiling(max(plot_data$year, na.rm = TRUE)+0.01) - 1, by = 1), ""), 
-                        expand = c(0, 0)) +
-    scale_color_manual(values = setNames(six_tone_scale_colours[1:2], c("15-29", "30+"))) +
-    scale_fill_manual(values = setNames(six_tone_scale_colours[1:2], c("15-29", "30+"))) +
-    scale_linetype_manual(values = c("solid", "dashed"), labels = c("Rest of Canada", "Francophones in Quebec")) +
-    scale_shape_manual(values = c(16, 17), labels = c("Rest of Canada", "Francophones in Quebec"))
-  # Print the plot
-  print(trajectory_plot)
-  # Save the plot in different formats
-  # ggsave(paste0("Output/Final Plots/PNG/", filename_suffix, "_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-  # ggsave(paste0("Output/Final Plots/JPG/", filename_suffix, "_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
-  # ggsave(paste0("Output/Final Plots/SVG/", filename_suffix, "_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-}
-
-# Create and save plots for different conditions
-create_and_save_plot(plot_data, "Self-Reported Mental Health by Age Range", "mental_health_canada")
-
-
-
-
-
-
-plot_data_quebec <- plot_data %>% filter(quebec == 1)
-create_and_save_plot(plot_data_quebec, "Average Life Satisfaction by Age Range (Quebec)", "mental_health_quebec")
-
-plot_data_quebec_anglophone <- plot_data %>% filter(quebec == 1 & anglophone == 1)
-create_and_save_plot(plot_data_quebec_anglophone, "Average Life Satisfaction by Age Range (Quebec Anglophones)", "mental_health_quebec_anglophone")
-
-
-mental_health_comparison_plot(plot_data_comparison, "Average Life Satisfaction by Age Range", "mental_health_canada")
-
-################################ MENTAL HEALTH COMPARISON PLOT ################################
+################################### MENTAL HEALTH COMPARISON PLOT ###################################
 
 # Create plot_data_comparison by mutating and summarizing the data
 plot_data_comparison <- data %>%
@@ -1333,8 +1225,8 @@ y_breaks <- seq(min_y, max_y, by = 0.5)
 # Create data for background rectangles
 rect_data <- data.frame(ymin = head(y_breaks, -1)[c(TRUE, FALSE)], ymax = tail(y_breaks, -1)[c(TRUE, FALSE)])
 
-# Create the trajectory plot
-trajectory_plot <- ggplot() +
+# Create the mental health comparison plot
+mental_health_comparison <- ggplot() +
     geom_rect(data = rect_data, 
               aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax), 
               fill = accent_background_colour, color = NA, inherit.aes = FALSE, show.legend = FALSE) +  # Add background rectangles
@@ -1366,12 +1258,12 @@ trajectory_plot <- ggplot() +
     scale_shape_manual(values = c(16, 17, 18))  # Set shape scale
 
 # Print the plot
-print(trajectory_plot)
+print(mental_health_comparison)
 
 # Save the plot in different formats
-ggsave(paste0("Output/Final Plots/PNG/mental_health_comparison_trajectory.png"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
-ggsave(paste0("Output/Final Plots/JPG/mental_health_comparison_trajectory.jpg"), plot = trajectory_plot, width = 9, height = 3, dpi = 300)
-ggsave(paste0("Output/Final Plots/SVG/mental_health_comparison_trajectory.svg"), plot = trajectory_plot + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/PNG/mental_health_comparison_trajectory.png"), plot = mental_health_comparison + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
+ggsave(paste0("Output/Final Plots/JPG/mental_health_comparison_trajectory.jpg"), plot = mental_health_comparison, width = 9, height = 3, dpi = 300)
+ggsave(paste0("Output/Final Plots/SVG/mental_health_comparison_trajectory.svg"), plot = mental_health_comparison + theme(plot.background = element_rect(fill = "transparent", color = NA)), width = 9, height = 3, dpi = 300, bg = "transparent")
 
 
 ###########################################################################################################
@@ -1384,12 +1276,12 @@ ggsave(paste0("Output/Final Plots/SVG/mental_health_comparison_trajectory.svg"),
 data("PROV")
 
 # Assuming 'provinces' is a dataframe with columns 'province' and 'ls'
-# Calculate the weighted average of 'ls' for each province for the years 2009, 201718, and 2022
-years_to_plot <- c(2009, 2018, 2022)
+# Calculate the weighted average of 'ls' for each province for the years 2009, 201718, and 2021
+years_to_plot <- c(2009, 2018, 2021)
 
-# Calculate the overall age makeup of Canada in 2022
+# Calculate the overall age makeup of Canada in 2021
 overall_age_makeup <- province %>%
-  filter(year == 2022 & age_ranges %in% c("15-29", "30-44", "45-59", "60+")) %>%
+  filter(year == 2021 & age_ranges %in% c("15-29", "30-44", "45-59", "60+")) %>%
   group_by(age_ranges) %>%
   dplyr::summarize(total_population = sum(frequency, na.rm = TRUE)) %>%
   mutate(overall_weight = total_population / sum(total_population))
@@ -1414,17 +1306,17 @@ territories_2009 <- province_map_data %>%
   mutate(province = list(c("Yukon", "Northwest Territories", "Nunavut"))) %>%
   unnest(province)
 
-# Handle the special case for territories in 2022
-territories_2022 <- tibble(
+# Handle the special case for territories in 2021
+territories_2021 <- tibble(
   province = c("Yukon", "Northwest Territories", "Nunavut"),
-  year = 2022,
+  year = 2021,
   weighted_avg_ls = NA_real_
 )
 
 # Combine the modified data
 province_map_data <- province_map_data %>%
   filter(!(year == 2009 & province == "Yukon/Northwest Territories/Nunavut")) %>%
-  bind_rows(territories_2009, territories_2022)
+  bind_rows(territories_2009, territories_2021)
 
 # Merge the weighted averages with the provincial boundary data
 PROV <- PROV %>%
